@@ -1,4 +1,5 @@
 const Tabletop = require('tabletop');
+const Utilities = require('./utilities.js');
 
 const initiators = {
   'Application Process': 'Conditions of Approval',
@@ -40,18 +41,25 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   sheet = data[target_sheet];
   const elements = sheet.elements;
 
-  console.log('Current Process,Current Task,Current Status,Prior Process,Prior Task, Prior Status');
+  console.log('SLA Days, Current Process,Current Task,Current Status,Prior Process,Prior Task, Prior Status');
   for (let i=0; i< elements.length; ++i) {
     if (i == 0) continue;
     const task = elements[i]
     let prior = getPrior(elements, i-1, task.Task, task.Process);
+    let dd = null;
+    if (task['Status Date'] != 'NULL' && task['Due Date'] != 'NULL') {
+      let statusDate = new Date(task['Status Date']);
+      let dueDate = new Date(task['Due Date']);
+      dd = Utilities.workingDaysBetweenDates(statusDate, dueDate);
+    }
     if (prior) {
-      console.log(`${task.Process},${task.Task},${task.Status},${prior.Process},${prior.Task},${prior.Status}`);
+      console.log(`${dd}, ${task.Process},${task.Task},${task.Status},${prior.Process},${prior.Task},${prior.Status}`);
     }
     else {
-      console.log(`${task.Process},${task.Task},${task.Status},-,-,-`);
+      console.log(`${dd}, ${task.Process},${task.Task},${task.Status},-,-,-`);
     }
   }
+  Utilities.doit();
 }
 
 Tabletop.init( { key: permits_sheet,
