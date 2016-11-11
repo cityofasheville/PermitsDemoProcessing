@@ -11,4 +11,4 @@ npm install
 node index.js [outputFile]
 ````
 
-The script will write to _stdout_ if no file name is given.
+The script will write to _stdout_ if no file name is given. Set the _target_sheet_ variable at the top of the script to pick different sub-sheets in the Google sheet.
