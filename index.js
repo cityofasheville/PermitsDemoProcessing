@@ -180,10 +180,11 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
       currentState[process] = {};
     }
     let currentProcessState = currentState[process];
-    if (process == 'Review Process') {
+    if (process == 'Review Process') { // Only applies to row.Workflow == 'MASTER V4'
       reviewProcess(tasks, process, row, currentProcessState, output);
     }
     else {
+      // Other processes are not correctly done yet.
       let prior = null, dueDays = null;
       if (i > 0) prior = getPrior(elements, i-1, task, process);
       if (!prior) prior = {Process: '-', Task: '-', Status: '-', 'Status Date': 'NULL'};
