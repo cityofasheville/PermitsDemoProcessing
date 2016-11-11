@@ -6,7 +6,9 @@ This is a script to process permit records from [this Google sheet](https://docs
 
 Clone this repository then run:
 
-  npm install
-  node index.js [output filename]
+````
+npm install
+node index.js [outputFile]
+````
 
-The script will write to stdout if no file name is given.
+The script will write to _stdout_ if no file name is given.
