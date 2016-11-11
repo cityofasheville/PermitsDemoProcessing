@@ -2,7 +2,7 @@
 Utilities = {};
 
 Utilities.workingDaysBetweenDates = function (startDate, endDate) {
-
+  if (!startDate || !endDate) return 0;
     // Validate input
     if (endDate < startDate)
         return 0;
