@@ -6,7 +6,7 @@ const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
 const target_sheet = '16-07528'; // Rocky main
 //const target_sheet = '16-07556PZ'; // Rocky planning
 //const target_sheet = '16-09014';
-//const target_sheet = '16-10083';
+// const target_sheet = '16-10083';
 let sheet = null;
 
 const initiators = {
@@ -75,7 +75,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
       start: routingStatusDate?routingStatusDate:statusDate,
       status: null, previous: null};
   }
-  else if (status == 'Approved') {
+  else if (status.startsWith('Approved')) {
     currentProcessState[task].restart = true;
     currentProcessState[task].start = statusDate;
     currentProcessState[task].status = status;
@@ -85,7 +85,9 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
     currentProcessState[task].previous = null;
   }
   counter++;
-  switch (status) {
+  let switchStatus = status;
+  if (status.startsWith('Approved')) switchStatus = 'Approved';
+  switch (switchStatus) {
     case 'In Review':
       {
         //console.log("In review " + task + " routingStatusDate = " + routingStatusDate);
