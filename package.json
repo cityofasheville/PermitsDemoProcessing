@@ -9,6 +9,7 @@
   "author": "Eric Jackson <eric@deepweave.com> (http://deepweave.com/)",
   "license": "ISC",
   "dependencies": {
+    "csv": "^1.1.0",
     "tabletop": "1.4.3"
   }
 }
