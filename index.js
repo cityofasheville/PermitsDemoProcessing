@@ -48,17 +48,9 @@ const getPrior = function (elements, start, task, process) {
 const applicationProcess = function (tasks, process, row, currentProcessState, output) {
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'];
-  /*
-   *
-   * NOTE: Let's have a "sum up" call to each process at the end and let each routine (app, review, issuance, close out)
-   * take care of its own, i.e., move it out of the masterv4 routine.
 
-   * NOTE: Need to maybe insert a process start?
-   *
-   * Need to rename routingStatusDate here.
-  */
   if (task == 'Conditions of Approval') {
-    currentProcessState.routingStatusDate = statusDate; // We use this to initialize review processes that aren't yet created
+    currentProcessState.taskResetDate = statusDate; // We use this to initialize processes that aren't yet created
     for (item in currentProcessState) {
       currentProcessState[item].restart = true;
       currentProcessState[item].start = statusDate;
@@ -70,7 +62,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
     }
   }
   else if (task == process) {
-    currentProcessState.routingStatusDate = statusDate;
+    currentProcessState.taskResetDate = statusDate;
     if (task == process && status == 'Complete') {
       currentProcessState.complete = true;
       tasks.push({
@@ -95,7 +87,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
   else if (! (task in currentProcessState)) {
     currentProcessState[task] = {
       restart: true,
-      start: currentProcessState.routingStatusDate?currentProcessState.routingStatusDate:statusDate,
+      start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
       status: null, previous: null};
   }
 
@@ -184,13 +176,9 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
 const reviewProcess = function (tasks, process, row, currentProcessState, output) {
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'];
-  /*
-   * Routing task:
-   *    - Resets any division task to restart. he next in each division will insert a "Ready for review"
-   * Hold for Revision status:
-  */
+
   if (task == 'Routing') {
-    currentProcessState.routingStatusDate = statusDate; // We use this to initialize review processes that aren't yet created
+    currentProcessState.taskResetDate = statusDate; // We use this to initialize review processes that aren't yet created
     for (item in currentProcessState) {
       currentProcessState[item].restart = true;
       currentProcessState[item].start = statusDate;
@@ -202,7 +190,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
     }
   }
   else if (task == process) {
-    currentProcessState.routingStatusDate = statusDate;
+    currentProcessState.taskResetDate = statusDate;
     if (task == process && status == 'Complete') {
       currentProcessState.complete = true;
       tasks.push({
@@ -217,7 +205,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
   else if (! (task in currentProcessState)) {
     currentProcessState[task] = {
       restart: true,
-      start: currentProcessState.routingStatusDate?currentProcessState.routingStatusDate:statusDate,
+      start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
       status: null, previous: null};
   }
   else if (status.startsWith('Approved')) {
@@ -285,7 +273,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
            process,
            task,
            status: 'Pending Review',
-           start: currentProcessState.routingStatusDate?currentProcessState.routingStatusDate:statusDate,
+           start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
            end: statusDate,
            owner,
            level
@@ -327,46 +315,27 @@ const wf_masterv4 = function (elements, output) {
     }
 
     let currentProcessState = currentState[process];
+    if (!('taskResetDate' in currentProcessState)) {
+      currentProcessState.taskResetDate = null;
+      currentProcessState.startDate = statusDate;
+      tasks.push({
+        process,
+        task: process,
+        status: 'Initiate',
+        start: currentProcessState.startDate,
+        end: statusDate,
+        owner: 'N/A',
+        level: 0
+      });
+    }
+
     if (process == 'Application Process') {
-      if (!('routingStatusDate' in currentProcessState)) {
-        currentProcessState.routingStatusDate = null;
-        currentProcessState.startDate = statusDate;
-      }
       applicationProcess(tasks, process, row, currentProcessState, output);
-      // if (task == process && status == 'Complete') {
-      //   currentProcessState.complete = true;
-      //   tasks.push({
-      //     process, task, status,
-      //     start: currentProcessState.startDate,
-      //     end: statusDate,
-      //     owner: 'N/A',
-      //     level: 0
-      //   });
-      // }
     }
     else if (process == 'Review Process') {
-      if (!('routingStatusDate' in currentProcessState)) {
-        currentProcessState.routingStatusDate = null;
-        currentProcessState.startDate = statusDate;
-      }
       reviewProcess(tasks, process, row, currentProcessState, output);
-      // if (task == process && status == 'Complete') {
-      //   currentProcessState.complete = true;
-      //   tasks.push({
-      //     process, task, status,
-      //     start: currentProcessState.startDate,
-      //     end: statusDate,
-      //     owner: 'N/A',
-      //     level: 0
-      //   });
-      // }
     }
     else if (process == 'Issuance') {
-      if (!('routingStatusDate' in currentProcessState)) {
-        currentProcessState.routingStatusDate = null;
-        currentProcessState.startDate = statusDate;
-      }
-      //applicationProcess(tasks, process, row, currentProcessState, output);
       if (task == process && status == 'Issue') {
         currentProcessState.complete = true;
         tasks.push({
@@ -379,11 +348,6 @@ const wf_masterv4 = function (elements, output) {
       }
     }
     else if (process == 'Close Out Process') {
-      if (!('routingStatusDate' in currentProcessState)) {
-        currentProcessState.routingStatusDate = null;
-        currentProcessState.startDate = statusDate;
-      }
-      //applicationProcess(tasks, process, row, currentProcessState, output);
       if (task == process && status == 'Complete') {
         currentProcessState.complete = true;
         tasks.push({
