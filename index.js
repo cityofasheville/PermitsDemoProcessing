@@ -3,10 +3,10 @@ const Utilities = require('./utilities.js');
 const fs = require('fs');
 
 const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
-// const target_sheet = '16-07528'; // Rocky main
+const target_sheet = '16-07528'; // Rocky main
 //const target_sheet = '16-07556PZ'; // Rocky planning
 //const target_sheet = '16-09014';
-const target_sheet = '16-10083';
+//const target_sheet = '16-10083';
 let sheet = null;
 
 const initiators = {
@@ -82,7 +82,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
       });
     }
     else {
-      currentProcessState.complete = true;
+      //currentProcessState.complete = true;
       tasks.push({
         process, task, status,
         start: statusDate,
@@ -199,6 +199,19 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
         currentProcessState[item].previous.end = statusDate;
       }
       currentProcessState[item].previous = null;
+    }
+  }
+  else if (task == process) {
+    currentProcessState.routingStatusDate = statusDate;
+    if (task == process && status == 'Complete') {
+      currentProcessState.complete = true;
+      tasks.push({
+        process, task, status,
+        start: currentProcessState.startDate,
+        end: statusDate,
+        owner: 'N/A',
+        level: 0
+      });
     }
   }
   else if (! (task in currentProcessState)) {
@@ -337,16 +350,16 @@ const wf_masterv4 = function (elements, output) {
         currentProcessState.startDate = statusDate;
       }
       reviewProcess(tasks, process, row, currentProcessState, output);
-      if (task == process && status == 'Complete') {
-        currentProcessState.complete = true;
-        tasks.push({
-          process, task, status,
-          start: currentProcessState.startDate,
-          end: statusDate,
-          owner: 'N/A',
-          level: 0
-        });
-      }
+      // if (task == process && status == 'Complete') {
+      //   currentProcessState.complete = true;
+      //   tasks.push({
+      //     process, task, status,
+      //     start: currentProcessState.startDate,
+      //     end: statusDate,
+      //     owner: 'N/A',
+      //     level: 0
+      //   });
+      // }
     }
     else if (process == 'Issuance') {
       if (!('routingStatusDate' in currentProcessState)) {
