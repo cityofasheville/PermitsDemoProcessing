@@ -68,11 +68,9 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
       }
       currentProcessState[item].previous = null;
     }
-    console.log("START: " + currentProcessState.startDate);
   }
   else if (task == process) {
     currentProcessState.routingStatusDate = statusDate;
-    console.log("TASK == PROCESS with status = " + status + " on date " + statusDate);
     if (task == process && status == 'Complete') {
       currentProcessState.complete = true;
       tasks.push({
@@ -99,7 +97,6 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
       restart: true,
       start: currentProcessState.routingStatusDate?currentProcessState.routingStatusDate:statusDate,
       status: null, previous: null};
-      console.log("INIT task = " + task);
   }
 
   let switchStatus = status;
@@ -413,7 +410,7 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   }
 
   fs.write(output,
-    'ID,Process,Task,Status,Start,End,Owner,Level\n');
+    'Id,Process,Task,Status,Start,End,Owner,Level\n');
   let tasks = [];
 
   if (elements[0].Workflow == 'MASTER V4') {
