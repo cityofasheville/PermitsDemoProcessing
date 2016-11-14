@@ -3,47 +3,11 @@ const Utilities = require('./utilities.js');
 const fs = require('fs');
 
 const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
-const target_sheet = '16-07528'; // Rocky main
+// const target_sheet = '16-07528'; // Rocky main
 //const target_sheet = '16-07556PZ'; // Rocky planning
 //const target_sheet = '16-09014';
-//const target_sheet = '16-10083';
+const target_sheet = '16-10083';
 let sheet = null;
-
-const initiators = {
-  'Application Process': 'Conditions of Approval',
-  'Review Process': 'Routing',
-  'Issuance': null,
-  'Close Out Process': 'Holds',
-};
-
-const terminators = {
-  'Application Process': 'Provided',
-  'Review Process': 'Approved',
-  'Issuance': null,
-  'Close Out Process': null,
-};
-
-const getPrior = function (elements, start, task, process) {
-  /*  Prior is first previous we find that:
-   *    - is the same task OR
-   *    - is an initiator task OR
-   *    - is the first task in the process
-   *  If we find nothing, then the task is a singleton/event
-   */
-  let prior = null;
-  let done = false;
-  for (let i=start; i>=0 && !done; --i) {
-    let t = elements[i];
-    if (t.Task == task || t.Task == initiators[process]) {
-      prior = t;
-      done = true;
-    }
-    else if (t.Process == process && process != 'Ad Hoc Tasks') {
-      prior = t;
-    }
-  }
-  return prior;
-}
 
 const applicationProcess = function (tasks, process, row, currentProcessState, output) {
   const task = row.Task, status = row.Status;
@@ -65,26 +29,14 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
     currentProcessState.taskResetDate = statusDate;
     if (task == process && status == 'Complete') {
       currentProcessState.complete = true;
-      tasks.push({
-        process, task, status,
-        start: currentProcessState.startDate,
-        end: statusDate,
-        owner: 'N/A',
-        level: 0
-      });
+      tasks.push(createTask(process, task, status, currentProcessState.startDate, statusDate, null, '-', 0));
     }
     else {
-      //currentProcessState.complete = true;
-      tasks.push({
-        process, task, status,
-        start: statusDate,
-        end: statusDate,
-        owner: 'N/A',
-        level: 0
-      });
+      tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', 0));
     }
   }
   else if (! (task in currentProcessState)) {
+    console.log("Creating a task in current process state: " + task + " with status " + status);
     currentProcessState[task] = {
       restart: true,
       start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
@@ -100,15 +52,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
       {
         if (currentProcessState[task].restart) {
           currentProcessState[task].restart = false;
-          tasks.push({
-            process,
-            task,
-            status: 'Required',
-            start: statusDate,
-            end: null,
-            owner,
-            level
-          });
+          tasks.push(createTask(process, task, 'Required', statusDate, null, null, owner, level));
           currentProcessState[task].start = statusDate;
           currentProcessState[task].previous = tasks[tasks.length-1];
         }
@@ -120,14 +64,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
          currentProcessState[task].previous.end = statusDate;
        }
        currentProcessState[task].restart = false;
-       tasks.push({
-         process, task,
-         status: "Sent",
-         start: statusDate,
-         end: statusDate,
-         owner:'THIRD',
-         level
-       });
+       tasks.push(createTask(process, task, 'Sent', statusDate, statusDate, null, 'THIRD', level));
        currentProcessState[task].start = statusDate;
        currentProcessState[task].previous = tasks[tasks.length-1];
      }
@@ -144,27 +81,12 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
           insertedStatus = 'Sent';
           insertedOwner='THIRD';
         }
-        tasks.push({
-          process,
-          task,
-          status: insertedStatus,
-          start: currentProcessState[task].start,
-          end: statusDate,
-          owner: insertedOwner,
-          level
-        });
+        tasks.push(createTask(process, task, insertedStatus, currentProcessState[task].start, statusDate, null, insertedOwner, level));
       }
       if (currentProcessState[task].previous) {
         currentProcessState[task].previous.end = statusDate;
       }
-      tasks.push({
-        process, task,
-        status,
-        start: statusDate,
-        end: statusDate,
-        owner,
-        level
-      });
+      tasks.push(createTask(process, task, status, statusDate, statusDate, null, owner, level));
     }
     break;
 
@@ -175,7 +97,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
 
 const reviewProcess = function (tasks, process, row, currentProcessState, output) {
   const task = row.Task, status = row.Status;
-  const statusDate = row['Status Date'];
+  const statusDate = row['Status Date'], due = row['Due Date'];
 
   if (task == 'Routing') {
     currentProcessState.taskResetDate = statusDate; // We use this to initialize review processes that aren't yet created
@@ -187,29 +109,26 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
         currentProcessState[item].previous.end = statusDate;
       }
       currentProcessState[item].previous = null;
+      currentProcessState[item].due = null
     }
   }
   else if (task == process) {
     currentProcessState.taskResetDate = statusDate;
     if (task == process && status == 'Complete') {
       currentProcessState.complete = true;
-      tasks.push({
-        process, task, status,
-        start: currentProcessState.startDate,
-        end: statusDate,
-        owner: 'N/A',
-        level: 0
-      });
+      tasks.push(createTask(process, task, status, currentProcessState.startDate, statusDate, null, '-', 0));
     }
   }
   else if (! (task in currentProcessState)) {
     currentProcessState[task] = {
       restart: true,
       start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
-      status: null, previous: null};
+      status: null,
+      previous: null,
+      due: null
+    };
   }
   else if (status.startsWith('Approved')) {
-    currentProcessState[task].restart = true;
     currentProcessState[task].start = statusDate;
     currentProcessState[task].status = status;
     if (currentProcessState[task].previous) {
@@ -226,24 +145,9 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
       {
         if (currentProcessState[task].restart) {
           currentProcessState[task].restart = false;
-          tasks.push({
-            process,
-            task,
-            status: 'Pending Review',
-            start: currentProcessState[task].start,
-            end: statusDate,
-            owner,
-            level
-          });
-          tasks.push({
-            process,
-            task,
-            status: 'In Review',
-            start: statusDate,
-            end: null,
-            owner,
-            level
-          });
+
+          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level));
+          tasks.push(createTask(process, task, 'In Review', statusDate, null, due, owner, level));
           currentProcessState[task].start = statusDate;
           currentProcessState[task].previous = tasks[tasks.length-1];
         }
@@ -252,15 +156,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
     case 'Hold for Revision':
      {
        tasks[tasks.length-1].end = statusDate;
-       tasks.push({
-         process,
-         task,
-         status: 'Hold for Revision',
-         start: statusDate,
-         end: null,
-         owner: 'CUST',
-         level
-       });
+       tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level));
        currentProcessState[task].start = statusDate;
        currentProcessState[task].restart = true;
        currentProcessState[task].previous = tasks[tasks.length-1];
@@ -269,32 +165,11 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
     case 'Approved':
      {
        if (currentProcessState[task].restart) {
-         tasks.push({
-           process,
-           task,
-           status: 'Pending Review',
-           start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
-           end: statusDate,
-           owner,
-           level
-         });
-         tasks.push({
-           process,
-           task,
-           status: "In Review",
-           start: statusDate,
-           end: statusDate,
-           owner,
-           level
-         });
-         tasks.push({
-           process, task,
-           status: "Approved",
-           start: statusDate,
-           end: statusDate,
-           owner,
-           level
-         });
+         tasks.push(createTask(process, task, 'Pending Review',
+                    currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
+                    statusDate, due, owner, level));
+         tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level));
+         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level));
        }
      }
      break;
@@ -315,18 +190,10 @@ const wf_masterv4 = function (elements, output) {
     }
 
     let currentProcessState = currentState[process];
-    if (!('taskResetDate' in currentProcessState)) {
+    if (!('taskResetDate' in currentProcessState) && process != 'Ad Hoc Tasks') {
       currentProcessState.taskResetDate = null;
       currentProcessState.startDate = statusDate;
-      tasks.push({
-        process,
-        task: process,
-        status: 'Initiate',
-        start: currentProcessState.startDate,
-        end: statusDate,
-        owner: 'N/A',
-        level: 0
-      });
+      tasks.push(createTask(process, process, 'Initiate', currentProcessState.startDate, statusDate, null, '-', 0));
     }
 
     if (process == 'Application Process') {
@@ -338,48 +205,43 @@ const wf_masterv4 = function (elements, output) {
     else if (process == 'Issuance') {
       if (task == process && status == 'Issue') {
         currentProcessState.complete = true;
-        tasks.push({
-          process, task, status,
-          start: currentProcessState.startDate,
-          end: statusDate,
-          owner: 'N/A',
-          level: 0
-        });
+        tasks.push(createTask(process, task, status, currentProcessState.startDate, statusDate, null, '-', 0));
       }
     }
     else if (process == 'Close Out Process') {
       if (task == process && status == 'Complete') {
         currentProcessState.complete = true;
-        tasks.push({
-          process, task, status,
-          start: currentProcessState.startDate,
-          end: statusDate,
-          owner: 'N/A',
-          level: 0
-        });
+        tasks.push(createTask(process, task, status, currentProcessState.startDate, statusDate, null, '-', 0));
       }
+      else if (task != process) {
+        tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', 1));
+      }
+    }
+    else {
+      tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', 1));
     }
   }
   for (let process in currentState) {
-    if (!currentState[process].complete) {
-      tasks.push({
-        process,
-        task: process,
-        status: null,
-        start: currentState[process].startDate,
-        end: null,
-        owner: 'N/A',
-        level: 0
-      });
+    if (!currentState[process].complete && process != 'Ad Hoc Tasks') {
+      tasks.push(createTask (process, process, null, currentState[process].startDate, null, null, '-', 0));
     }
   }
   return tasks;
 }
 
+const createTask = function(process, task, status, start, end, due, owner, level) {
+  let days = -1;
+  if (due && start) {
+    const d1 = new Date(start);
+    const d2 = new Date(due);
+    days = Utilities.workingDaysBetweenDates(d1, d2);
+  }
+  return { process, task, status, start, end, due, days, owner, level };
+}
+
 const processGoogleSpreadsheetData = function(data, tabletop) {
   sheet = data[target_sheet];
   const elements = sheet.elements;
-
   let output = process.stdout.fd;
   if (process.argv.length > 2) {
     const fname = (process.argv[2][0] == '/')?process.argv[2]:`./${process.argv[2]}`;
@@ -387,7 +249,7 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   }
 
   fs.write(output,
-    'Id,Process,Task,Status,Start,End,Owner,Level\n');
+    'Id,Process,Task,Status,Start,End,Due Date,Owner,Level\n');
   let tasks = [];
 
   if (elements[0].Workflow == 'MASTER V4') {
@@ -427,8 +289,9 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   }
   tasks.forEach( (row, index) => {
     let line = `${index},${row.process},${row.task},${row.status},`;
-    line += `${row.start},${row.end},${row.owner},${row.level}\n`;
+    line += `${row.start},${row.end},${row.due},${row.owner},${row.level}\n`;
     fs.write(output, line);
+    console.log(line);
   });
 }
 
