@@ -3,10 +3,10 @@ const Utilities = require('./utilities.js');
 const fs = require('fs');
 
 const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
-const target_sheet = '16-07528'; // Rocky main
+// const target_sheet = '16-07528'; // Rocky main
 //const target_sheet = '16-07556PZ'; // Rocky planning
 //const target_sheet = '16-09014';
-// const target_sheet = '16-10083';
+const target_sheet = '16-10083';
 let sheet = null;
 
 const initiators = {
@@ -49,15 +49,15 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'];
   /*
-   * So I think the way we do this is we have (in currentProcessState) a "required" array.
-   * Anything that gets referred to is added, with an initial date triggered when it first appears
-   * and an end date that is set by particular status values (accepted, provided, etc.)
-   * We output things when they hit the end date and then output any that don't have end dates at the end of the routine.
    *
    * NOTE: Let's have a "sum up" call to each process at the end and let each routine (app, review, issuance, close out)
    * take care of its own, i.e., move it out of the masterv4 routine.
+
+   * NOTE: Need to maybe insert a process start?
+   *
+   * Need to rename routingStatusDate here.
   */
-  if (task == 'Items Pending') {
+  if (task == 'Conditions of Approval') {
     currentProcessState.routingStatusDate = statusDate; // We use this to initialize review processes that aren't yet created
     for (item in currentProcessState) {
       currentProcessState[item].restart = true;
@@ -68,12 +68,38 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
       }
       currentProcessState[item].previous = null;
     }
+    console.log("START: " + currentProcessState.startDate);
+  }
+  else if (task == process) {
+    currentProcessState.routingStatusDate = statusDate;
+    console.log("TASK == PROCESS with status = " + status + " on date " + statusDate);
+    if (task == process && status == 'Complete') {
+      currentProcessState.complete = true;
+      tasks.push({
+        process, task, status,
+        start: currentProcessState.startDate,
+        end: statusDate,
+        owner: 'N/A',
+        level: 0
+      });
+    }
+    else {
+      currentProcessState.complete = true;
+      tasks.push({
+        process, task, status,
+        start: statusDate,
+        end: statusDate,
+        owner: 'N/A',
+        level: 0
+      });
+    }
   }
   else if (! (task in currentProcessState)) {
     currentProcessState[task] = {
       restart: true,
       start: currentProcessState.routingStatusDate?currentProcessState.routingStatusDate:statusDate,
       status: null, previous: null};
+      console.log("INIT task = " + task);
   }
 
   let switchStatus = status;
@@ -99,34 +125,57 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
         }
       }
     break;
-    case 'Provided':
-      {
+    case 'Sent':
+     {
        if (currentProcessState[task].previous) {
          currentProcessState[task].previous.end = statusDate;
        }
-      //  tasks.push({
-      //    process, task,
-      //    status: "Provided",
-      //    start: statusDate,
-      //    end: statusDate,
-      //    owner,
-      //    level
-      //  });
+       currentProcessState[task].restart = false;
+       tasks.push({
+         process, task,
+         status: "Sent",
+         start: statusDate,
+         end: statusDate,
+         owner:'THIRD',
+         level
+       });
+       currentProcessState[task].start = statusDate;
+       currentProcessState[task].previous = tasks[tasks.length-1];
      }
      break;
+
+   case 'Provided':
    case 'Accepted':
+   case 'Approved':
     {
+      if (currentProcessState[task].restart) {
+        let insertedStatus = 'Required';
+        let insertedOwner = owner;
+        if (task == 'Air Quality Approval') {
+          insertedStatus = 'Sent';
+          insertedOwner='THIRD';
+        }
+        tasks.push({
+          process,
+          task,
+          status: insertedStatus,
+          start: currentProcessState[task].start,
+          end: statusDate,
+          owner: insertedOwner,
+          level
+        });
+      }
       if (currentProcessState[task].previous) {
         currentProcessState[task].previous.end = statusDate;
       }
-      // tasks.push({
-      //   process, task,
-      //   status: "Accepted",
-      //   start: statusDate,
-      //   end: statusDate,
-      //   owner,
-      //   level
-      // });
+      tasks.push({
+        process, task,
+        status,
+        start: statusDate,
+        end: statusDate,
+        owner,
+        level
+      });
     }
     break;
 
@@ -208,7 +257,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
        tasks.push({
          process,
          task,
-         status: 'Hold for Rev.',
+         status: 'Hold for Revision',
          start: statusDate,
          end: null,
          owner: 'CUST',
@@ -274,16 +323,16 @@ const wf_masterv4 = function (elements, output) {
         currentProcessState.startDate = statusDate;
       }
       applicationProcess(tasks, process, row, currentProcessState, output);
-      if (task == process && status == 'Complete') {
-        currentProcessState.complete = true;
-        tasks.push({
-          process, task, status,
-          start: currentProcessState.startDate,
-          end: statusDate,
-          owner: 'N/A',
-          level: 0
-        });
-      }
+      // if (task == process && status == 'Complete') {
+      //   currentProcessState.complete = true;
+      //   tasks.push({
+      //     process, task, status,
+      //     start: currentProcessState.startDate,
+      //     end: statusDate,
+      //     owner: 'N/A',
+      //     level: 0
+      //   });
+      // }
     }
     else if (process == 'Review Process') {
       if (!('routingStatusDate' in currentProcessState)) {
@@ -364,7 +413,7 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   }
 
   fs.write(output,
-    'ID\t    Process\t    Task\t    Status\t        Start    \t         End    \tOwner\tLevel\n');
+    'ID,Process,Task,Status,Start,End,Owner,Level\n');
   let tasks = [];
 
   if (elements[0].Workflow == 'MASTER V4') {
@@ -403,8 +452,8 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
     }
   }
   tasks.forEach( (row, index) => {
-    let line = `${index}\t${row.process}\t${row.task}\t${row.status}\t`;
-    line += `${row.start}\t${row.end}\t${row.owner}\t${row.level}\n`;
+    let line = `${index},${row.process},${row.task},${row.status},`;
+    line += `${row.start},${row.end},${row.owner},${row.level}\n`;
     fs.write(output, line);
   });
 }
