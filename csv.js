@@ -296,7 +296,7 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   });
 }
 
-let input = fs.openSync('all.csv', 'r');
+let input = fs.openSync('masterv4.csv', 'r');
 let data = fs.readFileSync(input);
 let records = parse(data, {columns: true});
 console.log("The length of the file is " + records.length);

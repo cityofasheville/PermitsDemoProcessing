@@ -3,31 +3,43 @@ const Utilities = require('./utilities.js');
 const fs = require('fs');
 
 const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
-// const target_sheet = '16-07528'; // Rocky main
+const target_sheet = '16-07528'; // Rocky main
 //const target_sheet = '16-07556PZ'; // Rocky planning
 //const target_sheet = '16-09014';
-const target_sheet = '16-10083';
+//const target_sheet = '16-10083';
 let sheet = null;
+
+const resetAllTasks = function (currentProcessState, statusDate) {
+  currentProcessState.taskResetDate = statusDate; // We use this to initialize processes that aren't yet created
+  for (taskItem in currentProcessState) {
+    currentProcessState[taskItem].reset = true;
+    currentProcessState[taskItem].start = statusDate;
+    if (currentProcessState[taskItem].previous) {
+      currentProcessState[taskItem].previous.end = statusDate;
+    }
+    currentProcessState[taskItem].previous = null;
+  }
+}
 
 const applicationProcess = function (tasks, process, row, currentProcessState, output) {
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'];
 
-  if (task == 'Conditions of Approval') {
-    currentProcessState.taskResetDate = statusDate; // We use this to initialize processes that aren't yet created
-    for (item in currentProcessState) {
-      currentProcessState[item].restart = true;
-      currentProcessState[item].start = statusDate;
-      currentProcessState[item].status = status;
-      if (currentProcessState[item].previous) {
-        currentProcessState[item].previous.end = statusDate;
-      }
-      currentProcessState[item].previous = null;
+  if (task == process) {
+    if (status == 'Contacted Applicant') {
+      /*
+      * I'm not sure this is right. This means that any new requirements
+      * will be considered to have been imposed at this point.
+      * I thought about also resetting all the tasks, but that ends up
+      * creating duplicate 'Required' lines that don't make sense.
+      *
+      * Worth asking Diane. It may be better to just consider that all requirements
+      * date from the point where we set Conditions of Approval.
+      */
+      currentProcessState.taskResetDate = statusDate;
     }
-  }
-  else if (task == process) {
-    currentProcessState.taskResetDate = statusDate;
-    if (task == process && status == 'Complete') {
+
+    if (status == 'Complete') {
       currentProcessState.complete = true;
       tasks.push(createTask(process, task, status, currentProcessState.startDate, statusDate, null, '-', 0));
     }
@@ -35,12 +47,24 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
       tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', 0));
     }
   }
+  else if (task == 'Conditions of Approval') {
+    // currentProcessState.taskResetDate = statusDate; // We use this to initialize processes that aren't yet created
+    // for (taskItem in currentProcessState) {
+    //   currentProcessState[taskItem].reset = true;
+    //   currentProcessState[taskItem].start = statusDate;
+    //   if (currentProcessState[taskItem].previous) {
+    //     currentProcessState[taskItem].previous.end = statusDate;
+    //   }
+    //   currentProcessState[taskItem].previous = null;
+    // }
+    resetAllTasks(currentProcessState, statusDate);
+  }
   else if (! (task in currentProcessState)) {
     console.log("Creating a task in current process state: " + task + " with status " + status);
     currentProcessState[task] = {
-      restart: true,
+      reset: true,
       start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
-      status: null, previous: null};
+      previous: null};
   }
 
   let switchStatus = status;
@@ -50,8 +74,8 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
   switch (switchStatus) {
     case 'Required':
       {
-        if (currentProcessState[task].restart) {
-          currentProcessState[task].restart = false;
+        if (currentProcessState[task].reset) {
+          currentProcessState[task].reset = false;
           tasks.push(createTask(process, task, 'Required', statusDate, null, null, owner, level));
           currentProcessState[task].start = statusDate;
           currentProcessState[task].previous = tasks[tasks.length-1];
@@ -63,7 +87,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
        if (currentProcessState[task].previous) {
          currentProcessState[task].previous.end = statusDate;
        }
-       currentProcessState[task].restart = false;
+       currentProcessState[task].reset = false;
        tasks.push(createTask(process, task, 'Sent', statusDate, statusDate, null, 'THIRD', level));
        currentProcessState[task].start = statusDate;
        currentProcessState[task].previous = tasks[tasks.length-1];
@@ -74,7 +98,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
    case 'Accepted':
    case 'Approved':
     {
-      if (currentProcessState[task].restart) {
+      if (currentProcessState[task].reset) {
         let insertedStatus = 'Required';
         let insertedOwner = owner;
         if (task == 'Air Quality Approval') {
@@ -98,39 +122,59 @@ const applicationProcess = function (tasks, process, row, currentProcessState, o
 const reviewProcess = function (tasks, process, row, currentProcessState, output) {
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'], due = row['Due Date'];
-
-  if (task == 'Routing') {
-    currentProcessState.taskResetDate = statusDate; // We use this to initialize review processes that aren't yet created
-    for (item in currentProcessState) {
-      currentProcessState[item].restart = true;
-      currentProcessState[item].start = statusDate;
-      currentProcessState[item].status = status;
-      if (currentProcessState[item].previous) {
-        currentProcessState[item].previous.end = statusDate;
-      }
-      currentProcessState[item].previous = null;
-      currentProcessState[item].due = null
-    }
-  }
-  else if (task == process) {
+  /*
+  * This is the 'DIVISION REVIEW' process (GPROCESS.R1_PROCESS_CODE) in the MASTER V4 workflow
+  * Possible values of task are: Addressing, Building Review, Fire Review, Zoning Review plus the special tasks
+  * Routing and Clearing House.
+  *
+  * Possible values of status for the regular tasks are: In Review, Hold for Revision, Approved,
+  * Approved with Conditions, Approved - Fees Due, Approved - No Fees, Disapproved, Partial Approval,
+  * Plan Review Waiver.
+  *
+  * The special task Clearing House has status values: Complete, Comment Letter Sent. The special task
+  * Routing has status values: Routed Initial Review, Routed Second Review, Routed Third Review, Ruted Fourth Review
+  *
+  * The typical sequence for a regular task is a possibly repeated sequence of In Review and Hold for Revision, then
+  * termination of the task by approval, disapproval or partial approval.
+  *
+  * A Routing task resets all the other tasks in the process and sets the start date against which the SLA will be applied.
+  * The 'Routed Initial Review' task should always appear - subsequence Second, Third, etc., reviews follow Hold for Revision
+  * statuses when the customer has been asked to revise plans. However, if only minor revisions are required, the examiner may
+  * skip the routing step and either set directly to approved or possible review and hand back to the customer without resetting
+  * other tasks. For this reason, we always want to reset a process when we encounter a Hold for Revision status.
+  */
+  if (task == process) { // Top-level process status item
     currentProcessState.taskResetDate = statusDate;
     if (task == process && status == 'Complete') {
       currentProcessState.complete = true;
       tasks.push(createTask(process, task, status, currentProcessState.startDate, statusDate, null, '-', 0));
     }
   }
+  else if (task == 'Routing') {
+    resetAllTasks(currentProcessState, statusDate);
+    // currentProcessState.taskResetDate = statusDate; // We use this to initialize review processes that aren't yet created
+    // for (taskItem in currentProcessState) {
+    //   currentProcessState[taskItem].reset = true;
+    //   currentProcessState[taskItem].start = statusDate;
+    //   currentProcessState[taskItem].due = null
+    //   if (currentProcessState[taskItem].previous) {
+    //     currentProcessState[taskItem].previous.end = statusDate;
+    //   }
+    //   currentProcessState[taskItem].previous = null;
+    // }
+  }
   else if (! (task in currentProcessState)) {
     currentProcessState[task] = {
-      restart: true,
+      reset: true,
       start: currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
-      status: null,
       previous: null,
       due: null
     };
   }
   else if (status.startsWith('Approved')) {
-    currentProcessState[task].start = statusDate;
-    currentProcessState[task].status = status;
+    if (!(currentProcessState[task].reset)) {
+      currentProcessState[task].start = statusDate;
+    }
     if (currentProcessState[task].previous) {
       currentProcessState[task].previous.end = statusDate;
     }
@@ -143,8 +187,8 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
   switch (switchStatus) {
     case 'In Review':
       {
-        if (currentProcessState[task].restart) {
-          currentProcessState[task].restart = false;
+        if (currentProcessState[task].reset) {
+          currentProcessState[task].reset = false;
 
           tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level));
           tasks.push(createTask(process, task, 'In Review', statusDate, null, due, owner, level));
@@ -158,17 +202,21 @@ const reviewProcess = function (tasks, process, row, currentProcessState, output
        tasks[tasks.length-1].end = statusDate;
        tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level));
        currentProcessState[task].start = statusDate;
-       currentProcessState[task].restart = true;
+       currentProcessState[task].reset = true;
        currentProcessState[task].previous = tasks[tasks.length-1];
      }
      break;
     case 'Approved':
      {
-       if (currentProcessState[task].restart) {
+       if (currentProcessState[task].reset) {
          tasks.push(createTask(process, task, 'Pending Review',
-                    currentProcessState.taskResetDate?currentProcessState.taskResetDate:statusDate,
+                    currentProcessState[task].start,
                     statusDate, due, owner, level));
          tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level));
+         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level));
+       }
+       else {
+         // Is start date statusDate or some previous date.
          tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level));
        }
      }
