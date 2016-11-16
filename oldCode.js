@@ -1,7 +1,6 @@
 const Tabletop = require('tabletop');
 const Utilities = require('./utilities.js');
 const fs = require('fs');
-var parse = require('csv-parse/lib/sync');
 
 const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
 // const target_sheet = '16-07528'; // Rocky main
@@ -296,13 +295,6 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   });
 }
 
-let input = fs.openSync('masterv4.csv', 'r');
-let data = fs.readFileSync(input);
-let records = parse(data, {columns: true});
-console.log("The length of the file is " + records.length);
-console.log("REC: " + JSON.stringify(records[1000]));
-
-
-// Tabletop.init( { key: permits_sheet,
-//                  callback: processGoogleSpreadsheetData,
-//                  simpleSheet: false } );
+Tabletop.init( { key: permits_sheet,
+                 callback: processGoogleSpreadsheetData,
+                 simpleSheet: false } );
