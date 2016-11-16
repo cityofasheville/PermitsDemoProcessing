@@ -190,8 +190,11 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
     currentProcessState[task].previous = null;
   }
   // This takes care of the case when examiners skip routing
+  console.log("Review " + process + "." + task + "." + status + " ... " + terminator);
   if (terminator && !(currentProcessState[task].reset)) {
       currentProcessState[task].start = statusDate;
+      currentProcessState[task].reset = true;
+      console.log("Reset start to " + statusDate);
   }
 
   switch (switchStatus) {
@@ -209,7 +212,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
     case 'Hold for Revision':
      {
        tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level));
-       currentProcessState[task].reset = true;
+       //currentProcessState[task].reset = true;
        currentProcessState[task].start = statusDate;
        currentProcessState[task].previous = tasks[tasks.length-1];
      }
@@ -366,7 +369,7 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
  * MAIN PROGRAM
  */
 
-const processingMode = 'csv';
+const processingMode = 'sheets';
 if (processingMode == 'sheets') {
   const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
   Tabletop.init( { key: permits_sheet,
