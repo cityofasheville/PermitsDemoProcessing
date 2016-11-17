@@ -5,7 +5,7 @@ var parse = require('csv-parse/lib/sync');
 
 let permitNum = -1;
 
-const createTask = function(process, task, status, start, end, due, owner, level, row) {
+const createTask = function(process, task, status, start, end, due, owner, level, row, trip = 0) {
   if (!row) throw ("No row " + task);
   let days = -1;
   if (due && start) {
@@ -13,7 +13,11 @@ const createTask = function(process, task, status, start, end, due, owner, level
     const d2 = new Date(due);
     days = Utilities.workingDaysBetweenDates(d1, d2);
   }
-  return { B1_ALT_ID: permitNum, process, task, status, start, end, due, days, owner, level, comment:row.SD_COMMENT };
+  return { B1_ALT_ID: permitNum, process, task, status, start, end, due, days, owner, level, trip,
+           type:row.B1_PER_TYPE,subtype:row.B1_PER_SUB_TYPE,category:row.B1_PER_CATEGORY,
+           appdate:row['Application Date'],appstatus:row['Application Status'],
+           appstatusdate:row['Application Status Date'],agencycode:row.SD_AGENCY_CODE,
+           comment:row.SD_COMMENT };
 }
 
 const resetAllTasks = function (currentProcessState, statusDate) {
@@ -140,6 +144,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState) {
 * The typical sequence for a regular task is a possibly repeated sequence of In Review and Hold for Revision, then
 * termination of the task by approval, disapproval or partial approval.
 */
+let reviewTrip = -1;
 const reviewProcess = function (tasks, process, row, currentProcessState) {
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'], due = row['Due Date'];
@@ -180,6 +185,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
   if (!(task in currentProcessState)) { // Initialize this task if we see it for the first time
     currentProcessState[task] = {
       reset: true,
+      trip: 0,
       start: currentProcessState.processRoundStartDate?currentProcessState.processRoundStartDate:statusDate,
       previous: null,
       due: null
@@ -196,21 +202,24 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
       currentProcessState[task].reset = true;
   }
 
+  if (currentProcessState[task].reset) {
+    currentProcessState[task].trip = currentProcessState[task].trip + 1;
+  }
   switch (switchStatus) {
     case 'In Review':
       {
         if (currentProcessState[task].reset) {
           currentProcessState[task].reset = false;
-          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level, row));
+          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level, row, currentProcessState[task].trip));
           currentProcessState[task].start = statusDate;
         }
-        tasks.push(createTask(process, task, 'In Review', statusDate, null, due, owner, level, row));
+        tasks.push(createTask(process, task, 'In Review', statusDate, null, due, owner, level, row,currentProcessState[task].trip));
         currentProcessState[task].previous = tasks[tasks.length-1];
       }
       break;
     case 'Hold for Revision':
      {
-       tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level, row));
+       tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level, row,currentProcessState[task].trip));
        //currentProcessState[task].reset = true;
        currentProcessState[task].start = statusDate;
        currentProcessState[task].previous = tasks[tasks.length-1];
@@ -219,7 +228,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
 
     case 'NULL':
       {
-        tasks.push(createTask(process, task, 'Pending Review', currentProcessState.processRoundStartDate, null, null, 'DSD', level, row));
+        tasks.push(createTask(process, task, 'Pending Review', currentProcessState.processRoundStartDate, null, null, 'DSD', level, row,currentProcessState[task].trip));
         currentProcessState[task].reset = false;
         currentProcessState[task].start = currentProcessState.processRoundStartDate;
         currentProcessState[task].previous = tasks[tasks.length-1];
@@ -230,13 +239,13 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
      {
        if (currentProcessState[task].reset) {
          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start,
-                    statusDate, due, owner, level, row));
-         tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level, row));
-         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level, row));
+                    statusDate, due, owner, level, row,currentProcessState[task].trip));
+         tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level, row,currentProcessState[task].trip));
+         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level, row,currentProcessState[task].trip));
        }
        else {
          // Is start date statusDate or some previous date?
-         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level, row));
+         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level, row,currentProcessState[task].trip));
        }
      }
      break;
@@ -286,6 +295,7 @@ const closeoutProcess = function (tasks, process, row, currentProcessState) {
 const wf_masterv4 = function (elements, output) {
   let currentState = {};
   let tasks = [];
+  permitNum = elements[0].B1_ALT_ID;
   for (let i=0; i< elements.length; ++i) {
     const row = elements[i];
     const process = row.Process, task = row.Task, status = row.Status, statusDate = row['Status Date'];
@@ -345,8 +355,6 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
     output = fs.openSync(fname, 'w');
   }
 
-  fs.write(output,
-    'Id,Process,Task,Status,Start,End,Due Date,Owner,Level,Comment\n');
   let tasks = [];
 
   if (elements[0].Workflow == 'MASTER V4') {
@@ -356,19 +364,35 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
     console.log("Unknown workflow " + elements[0].Workflow);
   }
 
+  outputPermit(output, tasks);
+}
+
+let init = 0;
+const outputPermit = function (output, tasks) {
+  if (init == 0) {
+    fs.write(output,
+      'B1_ALT_ID,Id,Process,Task,Status,Trip,Start,End,Due Date,Owner,Level,Type,SubType,' +
+      'Category,Application Date,Application Status,Application Status Date,Agency Code,' +
+      'Comment\n');
+    init = 1;
+  }
+
   tasks.forEach( (row, index) => {
-    let line = `${index},${row.process},${row.task},${row.status},`;
-    line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.comment}\n`;
+    let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},${row.trip},`;
+    line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.type},${row.subtype},`;
+    line += `${row.category},${row.appdate},${row.appstatus},${row.appstatusdate},${row.agencycode},`;
+    line += `${row.comment}\n`;
     fs.writeSync(output, line);
     //console.log(line);
   });
+
 }
 
 /*
  * MAIN PROGRAM
  */
 
-const processingMode = 'csv';
+const processingMode = 'sheets';
 if (processingMode == 'sheets') {
   const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
   Tabletop.init( { key: permits_sheet,
@@ -386,9 +410,11 @@ else { // read a csv file
     output = fs.openSync(fname, 'w');
   }
 
-  fs.write(output,
-    'B1_ALT_ID,Id,Process,Task,Status,Start,End,Due Date,Owner,Level,Comment\n');
-
+  // fs.write(output,
+  //   'B1_ALT_ID,Id,Process,Task,Status,Start,End,Due Date,Owner,Level,Type,SubType,' +
+  //   'Category,Application Date,Application Status,Application Status Date,Agency Code,' +
+  //   'Comment\n');
+  //
   // Now process permit by permit
   let done = false, cur = 0, id = null, count = 0;
   let elements = [];
@@ -406,12 +432,16 @@ else { // read a csv file
         console.log("Unknown workflow " + elements[0].Workflow);
       }
 
-      tasks.forEach( (row, index) => {
-        let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},`;
-        line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.comment}\n`;
-        fs.writeSync(output, line);
-        //console.log(line);
-      });
+      // tasks.forEach( (row, index) => {
+      //   let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},`;
+      //   line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.type},${row.subtype},`;
+      //   line += `${row.category},${row.appdate},${row.appstatus},${row.appstatusdate},${row.agencycode},`;
+      //   line += `${row.comment}\n`;
+      //   fs.writeSync(output, line);
+      //   //console.log(line);
+      // });
+
+      outputPermit(output, tasks);
       elements = [];
       id = null;
     }
