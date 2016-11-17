@@ -1,7 +1,2 @@
 node_modules
-try.csv
-try1.csv
-simple.csv
-simple1.csv
-masterv4.csv
-all.csv
+*.csv

@@ -368,31 +368,51 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
 }
 
 let init = 0;
+let fPermits, fPermitsHistory, fSummaryByTrip, fSummaryByPermit;
+
 const outputPermit = function (output, tasks) {
   if (init == 0) {
-    fs.write(output,
+      fPermits = fs.openSync('t_permits.csv', 'w');
+      fPermitsHistory = fs.openSync('t_permits_history.csv','w');
+
+    fs.write(fPermitsHistory,
       'B1_ALT_ID,Id,Process,Task,Status,Trip,Start,End,Due Date,Owner,Level,Type,SubType,' +
       'Category,Application Date,Application Status,Application Status Date,Agency Code,' +
       'Comment\n');
     init = 1;
   }
 
+  let r = tasks[0];
+  let permit = {
+    permit_id: r.B1_ALT_ID,
+    type: r.type,
+    subtype: r.subtype,
+    category: r.category,
+    app_date: r.appdate,
+    app_status: r.appstatus,
+    app_status_date: r.appstatusdate,
+    trips: 0
+  };
+  let maxTrip = 0;
   tasks.forEach( (row, index) => {
+    if (row.trip > maxTrip) maxTrip = row.trip;
     let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},${row.trip},`;
     line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.type},${row.subtype},`;
     line += `${row.category},${row.appdate},${row.appstatus},${row.appstatusdate},${row.agencycode},`;
     line += `${row.comment}\n`;
-    fs.writeSync(output, line);
+    fs.writeSync(fPermitsHistory, line);
     //console.log(line);
   });
-
+  permit.trips = maxTrip;
+//  if (maxTrip == 0) console.log("PERMIT: " + JSON.stringify(tasks));
+if (maxTrip == 0) console.log(permit.permit_id + "  - Max trip: " + maxTrip + ", appdate " + permit.app_date);
 }
 
 /*
  * MAIN PROGRAM
  */
 
-const processingMode = 'sheets';
+const processingMode = 'csv';
 if (processingMode == 'sheets') {
   const permits_sheet = '1TR3v7jKfw1as8RuXrzvDqwoQdrOltMreqlqwJnxwWDk';
   Tabletop.init( { key: permits_sheet,
