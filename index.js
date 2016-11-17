@@ -5,14 +5,15 @@ var parse = require('csv-parse/lib/sync');
 
 let permitNum = -1;
 
-const createTask = function(process, task, status, start, end, due, owner, level) {
+const createTask = function(process, task, status, start, end, due, owner, level, row) {
+  if (!row) throw ("No row " + task);
   let days = -1;
   if (due && start) {
     const d1 = new Date(start);
     const d2 = new Date(due);
     days = Utilities.workingDaysBetweenDates(d1, d2);
   }
-  return { B1_ALT_ID: permitNum, process, task, status, start, end, due, days, owner, level };
+  return { B1_ALT_ID: permitNum, process, task, status, start, end, due, days, owner, level, comment:row.SD_COMMENT };
 }
 
 const resetAllTasks = function (currentProcessState, statusDate) {
@@ -32,7 +33,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState) {
   if (!('processStartDate' in currentProcessState)) { // First time here
     currentProcessState.processStartDate = statusDate; // This is the start of the whole process
     currentProcessState.processRoundStartDate = null; // Start of the current round
-    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0));
+    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0, row));
   }
 
   /*
@@ -55,10 +56,10 @@ const applicationProcess = function (tasks, process, row, currentProcessState) {
     }
     if (status == 'Complete') {
       currentProcessState.complete = true;
-      tasks.push(createTask(process, task, status, currentProcessState.processStartDate, statusDate, null, '-', specials[task]));
+      tasks.push(createTask(process, task, status, currentProcessState.processStartDate, statusDate, null, '-', specials[task], row));
     }
     else {
-      tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', specials[task]));
+      tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', specials[task], row));
     }
     return;
   }
@@ -99,7 +100,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState) {
       {
         if (currentProcessState[task].reset) {
           currentProcessState[task].reset = false;
-          tasks.push(createTask(process, task, status, statusDate, null, null, waits[status], 1));
+          tasks.push(createTask(process, task, status, statusDate, null, null, waits[status], 1, row));
           currentProcessState[task].start = statusDate;
           currentProcessState[task].previous = tasks[tasks.length-1];
         }
@@ -108,7 +109,7 @@ const applicationProcess = function (tasks, process, row, currentProcessState) {
 
     case 'TERMINATOR':
     {
-      tasks.push(createTask(process, task, status, statusDate, statusDate, null, 'CUST', 1));
+      tasks.push(createTask(process, task, status, statusDate, statusDate, null, 'CUST', 1, row));
     }
     break;
 
@@ -146,7 +147,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
   if (!('processStartDate' in currentProcessState)) { // First time here
     currentProcessState.processStartDate = statusDate; // This is the start of the whole process
     currentProcessState.processRoundStartDate = null; // this is the start of the current round (initial, second, etc. review)
-    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0));
+    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0, row));
   }
   /*
    * Special tasks: these tasks start, reset or end the process
@@ -162,7 +163,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
         startDate = currentProcessState.processStartDate;
       }
     }
-    tasks.push(createTask(process, task, status, startDate, statusDate, null, '-', specials[task]));
+    tasks.push(createTask(process, task, status, startDate, statusDate, null, '-', specials[task], row));
     return;
   }
 
@@ -200,16 +201,16 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
       {
         if (currentProcessState[task].reset) {
           currentProcessState[task].reset = false;
-          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level));
+          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level, row));
           currentProcessState[task].start = statusDate;
         }
-        tasks.push(createTask(process, task, 'In Review', statusDate, null, due, owner, level));
+        tasks.push(createTask(process, task, 'In Review', statusDate, null, due, owner, level, row));
         currentProcessState[task].previous = tasks[tasks.length-1];
       }
       break;
     case 'Hold for Revision':
      {
-       tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level));
+       tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level, row));
        //currentProcessState[task].reset = true;
        currentProcessState[task].start = statusDate;
        currentProcessState[task].previous = tasks[tasks.length-1];
@@ -218,7 +219,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
 
     case 'NULL':
       {
-        tasks.push(createTask(process, task, 'Pending Review', currentProcessState.processRoundStartDate, null, null, 'DSD', level));
+        tasks.push(createTask(process, task, 'Pending Review', currentProcessState.processRoundStartDate, null, null, 'DSD', level, row));
         currentProcessState[task].reset = false;
         currentProcessState[task].start = currentProcessState.processRoundStartDate;
         currentProcessState[task].previous = tasks[tasks.length-1];
@@ -229,20 +230,20 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
      {
        if (currentProcessState[task].reset) {
          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start,
-                    statusDate, due, owner, level));
-         tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level));
-         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level));
+                    statusDate, due, owner, level, row));
+         tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level, row));
+         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level, row));
        }
        else {
          // Is start date statusDate or some previous date?
-         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level));
+         tasks.push(createTask(process, task, 'Approved', statusDate, statusDate, due, owner, level, row));
        }
      }
      break;
 
     default:
       console.log(permitNum + ": Unknown Review: " + process + ", task = " + task + ", status = " + status + ", date " + statusDate);
-    //tasks.push(createTask(process, task, status, statusDate, statusDate, due, owner, level));
+    //tasks.push(createTask(process, task, status, statusDate, statusDate, due, owner, level, row));
 
       break;
   }
@@ -252,11 +253,11 @@ const issuanceProcess = function (tasks, process, row, currentProcessState) {
   const task = row.Task, status = row.Status, statusDate = row['Status Date'];
   if (!('processStartDate' in currentProcessState)) { // First time here
     currentProcessState.processStartDate = statusDate; // This is the start of the whole process
-    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0));
+    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0, row));
   }
   if (task == process && status == 'Issue') {
     currentProcessState.complete = true;
-    tasks.push(createTask(process, task, status, currentProcessState.processStartDate, statusDate, null, '-', 0));
+    tasks.push(createTask(process, task, status, currentProcessState.processStartDate, statusDate, null, '-', 0, row));
   }
 }
 
@@ -264,12 +265,12 @@ const closeoutProcess = function (tasks, process, row, currentProcessState) {
   const task = row.Task, status = row.Status, statusDate = row['Status Date'];
   if (!('processStartDate' in currentProcessState)) { // First time here
     currentProcessState.processStartDate = statusDate; // This is the start of the whole process
-    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0));
+    tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0, row));
   }
 
   if (task == process && status == 'Complete') {
     currentProcessState.complete = true;
-    tasks.push(createTask(process, task, status, currentProcessState.processStartDate, statusDate, null, '-', 0));
+    tasks.push(createTask(process, task, status, currentProcessState.processStartDate, statusDate, null, '-', 0, row));
   }
   else if (task != process) {
     const locStatus = (status == 'NULL')?'Pending':status;
@@ -278,7 +279,7 @@ const closeoutProcess = function (tasks, process, row, currentProcessState) {
       startDate = currentProcessState.processStartDate;
       endDate = null;
     }
-    tasks.push(createTask(process, task, locStatus, startDate, endDate, null, '-', 1));
+    tasks.push(createTask(process, task, locStatus, startDate, endDate, null, '-', 1, row));
   }
 }
 
@@ -318,9 +319,9 @@ const wf_masterv4 = function (elements, output) {
           if (!('processRoundStartDate' in currentProcessState) && process != 'Ad Hoc Tasks') {
             currentProcessState.processRoundStartDate = null;
             currentProcessState.startDate = statusDate;
-            tasks.push(createTask(process, process, 'Start', currentProcessState.startDate, statusDate, null, '-', 0));
+            tasks.push(createTask(process, process, 'Start', currentProcessState.startDate, statusDate, null, '-', 0, row));
           }
-          tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', 1));
+          tasks.push(createTask(process, task, status, statusDate, statusDate, null, '-', 1, row));
         }
         break;
     }
@@ -345,7 +346,7 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   }
 
   fs.write(output,
-    'Id,Process,Task,Status,Start,End,Due Date,Owner,Level\n');
+    'Id,Process,Task,Status,Start,End,Due Date,Owner,Level,Comment\n');
   let tasks = [];
 
   if (elements[0].Workflow == 'MASTER V4') {
@@ -357,7 +358,7 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
 
   tasks.forEach( (row, index) => {
     let line = `${index},${row.process},${row.task},${row.status},`;
-    line += `${row.start},${row.end},${row.due},${row.owner},${row.level}\n`;
+    line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.comment}\n`;
     fs.writeSync(output, line);
     //console.log(line);
   });
@@ -386,7 +387,7 @@ else { // read a csv file
   }
 
   fs.write(output,
-    'B1_ALT_ID,Id,Process,Task,Status,Start,End,Due Date,Owner,Level\n');
+    'B1_ALT_ID,Id,Process,Task,Status,Start,End,Due Date,Owner,Level,Comment\n');
 
   // Now process permit by permit
   let done = false, cur = 0, id = null, count = 0;
@@ -407,7 +408,7 @@ else { // read a csv file
 
       tasks.forEach( (row, index) => {
         let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},`;
-        line += `${row.start},${row.end},${row.due},${row.owner},${row.level}\n`;
+        line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.comment}\n`;
         fs.writeSync(output, line);
         //console.log(line);
       });
