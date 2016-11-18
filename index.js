@@ -22,12 +22,14 @@ const createTask = function(process, task, status, start, end, due, owner, level
 
 const resetAllTasks = function (currentProcessState, statusDate) {
   for (taskItem in currentProcessState) {
-    currentProcessState[taskItem].reset = true;
-    currentProcessState[taskItem].start = statusDate;
-    if (currentProcessState[taskItem].previous) {
-      currentProcessState[taskItem].previous.end = statusDate;
+    if (taskItem != 'processStartDate' && taskItem != 'processRoundStartDate') {
+      currentProcessState[taskItem].reset = true;
+      currentProcessState[taskItem].start = statusDate;
+      if (currentProcessState[taskItem].previous) {
+        currentProcessState[taskItem].previous.end = statusDate;
+      }
+      currentProcessState[taskItem].previous = null;
     }
-    currentProcessState[taskItem].previous = null;
   }
 }
 
@@ -144,12 +146,16 @@ const applicationProcess = function (tasks, process, row, currentProcessState) {
 * The typical sequence for a regular task is a possibly repeated sequence of In Review and Hold for Revision, then
 * termination of the task by approval, disapproval or partial approval.
 */
-let reviewTrip = -1;
+let reviewTrip = 0;
 const reviewProcess = function (tasks, process, row, currentProcessState) {
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'], due = row['Due Date'];
+  let doit = false;
+  if (row.B1_ALT_ID == '16-07337') doit = true;
 
   if (!('processStartDate' in currentProcessState)) { // First time here
+    reviewTrip = 0;
+    if (doit) console.log("Set reviewTrip to 0");
     currentProcessState.processStartDate = statusDate; // This is the start of the whole process
     currentProcessState.processRoundStartDate = null; // this is the start of the current round (initial, second, etc. review)
     tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0, row));
@@ -162,16 +168,20 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
     let startDate = statusDate;
     if (task == 'Review Process' || task == 'Routing') { // Process start or restart
       currentProcessState.processRoundStartDate = statusDate;
-      if (task == 'Routing') resetAllTasks(currentProcessState, statusDate);
+      if (task == 'Routing') {
+        resetAllTasks(currentProcessState, statusDate);
+        ++reviewTrip;
+if (doit) console.log("Set reviewTrip to " + reviewTrip + " in routing step - status = " + status);
+      }
       if (task == 'Review Process' && status == 'Complete') {
         currentProcessState.complete = true;
         startDate = currentProcessState.processStartDate;
+        currentProcessState.processRoundStartDate = null;
       }
     }
     tasks.push(createTask(process, task, status, startDate, statusDate, null, '-', specials[task], row));
     return;
   }
-
   /*
    * If we're here, we have a regular task.
    */
@@ -182,14 +192,19 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
   let switchStatus = terminator?'TERMINATOR':status;
   let owner = 'DSD';
   let level = 1;
+  if (doit) {
+    console.log("Permit " + row.B1_ALT_ID + ", terminator = " + terminator);
+    console.log("  " + process + "."+task+'.'+status + ": " + statusDate);
+  }
   if (!(task in currentProcessState)) { // Initialize this task if we see it for the first time
     currentProcessState[task] = {
       reset: true,
-      trip: 0,
+      trip: reviewTrip,
       start: currentProcessState.processRoundStartDate?currentProcessState.processRoundStartDate:statusDate,
       previous: null,
       due: null
     };
+    if (doit) console.log("Initialized " + task + "." + status + " to trip " + reviewTrip);
   }
   // Complete the previous step, if it exists.
   if (currentProcessState[task].previous) {
@@ -200,6 +215,8 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
   if (terminator && !(currentProcessState[task].reset)) {
       currentProcessState[task].start = statusDate;
       currentProcessState[task].reset = true;
+      ++reviewTrip;
+      if (doit) console.log("Update on task " + task + ", status " + status + " - reviewTrip now " + reviewTrip);
   }
 
   if (currentProcessState[task].reset) {
@@ -219,7 +236,14 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
       break;
     case 'Hold for Revision':
      {
-       tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level, row,currentProcessState[task].trip));
+       if (currentProcessState[task].reset) { // We skipped all steps before this!
+         tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level,
+            row, currentProcessState[task].trip));
+         tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level,
+            row, currentProcessState[task].trip));
+       }
+       tasks.push(createTask(process, task, 'Hold for Revision', statusDate, null, null, 'CUST', level,
+          row,0));
        //currentProcessState[task].reset = true;
        currentProcessState[task].start = statusDate;
        currentProcessState[task].previous = tasks[tasks.length-1];
@@ -298,6 +322,9 @@ const wf_masterv4 = function (elements) {
   permitNum = elements[0].B1_ALT_ID;
   for (let i=0; i< elements.length; ++i) {
     const row = elements[i];
+    if (!row['Status Date'] || row['Status Date'].toLowerCase() == 'null') {
+      row['Status Date'] = null;
+    }
     const process = row.Process, task = row.Task, status = row.Status, statusDate = row['Status Date'];
 
     if (!(process in currentState)) {
@@ -362,6 +389,20 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
   outputPermit(tasks);
 }
 
+const SLA_Values = [1, 3, 10, 21, 30, 45, 90];
+
+const getSLA = function (n) {
+  start = 999999;
+  index = -1;
+  SLA_Values.forEach( (val, idx) => {
+    const diff = Math.abs(val - n);
+    if (diff <= start) {
+      index = idx;
+      start = diff;
+    }
+  });
+  return SLA_Values[index];
+}
 let init = 0;
 let fPermits, fPermitsHistory, fSummaryByTrip, fSummaryByPermit;
 
@@ -386,18 +427,24 @@ const outputPermit = function (tasks) {
     app_date: r.appdate,
     app_status: r.appstatus,
     app_status_date: r.appstatusdate,
-    trips: 0
+    trips: 0,
+    violation: false,
+    violationDays: 0,
+    culprits:{}
   };
   let maxTrip = 0;
   let trips = [];
   tasks.forEach( (row, index) => {
     if (row.trip > maxTrip) {
       maxTrip = row.trip;
+      let lstart = (row.start)?row.start:row.appdate;
       trips[row.trip] = {
-        start: row.start,
+        start: lstart,
         end: null,
         due: row.due,
-        tasks: [row]
+        tasks: [row],
+        violation: false,
+        violationDays: 0
       };
     }
     else if (row.trip > 0) {
@@ -412,31 +459,39 @@ const outputPermit = function (tasks) {
   });
   permit.trips = maxTrip;
   let doit = false;
-  if (permit.permit_id == '16-10682') doit = true;
+  if (permit.permit_id == '16-07337') doit = true;
   if (maxTrip == 0) {
-    console.log(permit.permit_id + "  - Max trip: " + maxTrip + ", appdate " + permit.app_date);
+    //console.log(permit.permit_id + "  - Max trip: " + maxTrip + ", appdate " + permit.app_date);
   }
   else {
     trips.forEach( (trip, index) => {
       const len = trip.tasks.length;
       trip.end = trip.tasks[len-1].end;
-      const d1 = new Date(trip.start);
-      const d2 = new Date(trip.end);
-      const d3 = new Date(trip.due);
-      let days = Utilities.workingDaysBetweenDates(d1, d2);
-      let sla = Utilities.workingDaysBetweenDates(d1, d3);
-      let custDays = 0;
+      if (!trip.end) {
+        trip.end = new Date().toISOString();
+      }
+      const d1 = trip.start?new Date(trip.start):null;
+      const d2 = trip.end?new Date(trip.end):null;
+      const d3 = trip.due?new Date(trip.due):null;
+      let days = (d1&&d2)?Utilities.workingDaysBetweenDates(d1, d2):null;
+      let sla = (d1&&d3)?getSLA(Utilities.workingDaysBetweenDates(d1, d3)):null;
+      trip.violation = false;
+      trip.violationDays = 0;
+      if ((days && sla) && days > sla) {
+        trip.violation = true;
+        trip.violationDays = days - sla;
+        permit.violation = true;
+        permit.violationDays += trip.violationDays;
+      }
+      // It would be good to walk through and find the "blame" department.
+      if (trip.violation) {
+        console.log(permit.permit_id + "-" + index + ": " + days + " of " + sla + ", " + trip.violationDays);
+      }
       for (let i=0; i<len; ++i) {
         let tsk = trip.tasks[i];
         if (doit) {
           console.log("* " + tsk.task + "." + tsk.status + ":  " + trip.tasks[i].start + "  -  " + trip.tasks[i].end);
         }
-        if (trip.tasks[i].owner == 'CUST') {
-          custDays += Utilities.workingDaysBetweenDates(new Date(trip.tasks[i].start), new Date(trip.tasks[i].end));
-        }
-      }
-      if (doit) {
-        console.log(" " + permit.permit_id + "   trip " + index + ": " + days + " of " + sla + " - " + custDays + ", " + trip.start + " -- " + trip.end);
       }
     });
   }
