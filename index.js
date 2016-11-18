@@ -292,7 +292,7 @@ const closeoutProcess = function (tasks, process, row, currentProcessState) {
   }
 }
 
-const wf_masterv4 = function (elements, output) {
+const wf_masterv4 = function (elements) {
   let currentState = {};
   let tasks = [];
   permitNum = elements[0].B1_ALT_ID;
@@ -349,28 +349,23 @@ let sheet = null;
 const processGoogleSpreadsheetData = function(data, tabletop) {
   sheet = data[target_sheet];
   const elements = sheet.elements;
-  let output = process.stdout.fd;
-  if (process.argv.length > 2) {
-    const fname = (process.argv[2][0] == '/')?process.argv[2]:`./${process.argv[2]}`;
-    output = fs.openSync(fname, 'w');
-  }
 
   let tasks = [];
 
   if (elements[0].Workflow == 'MASTER V4') {
-    tasks = wf_masterv4(elements, output);
+    tasks = wf_masterv4(elements);
   }
   else {
     console.log("Unknown workflow " + elements[0].Workflow);
   }
 
-  outputPermit(output, tasks);
+  outputPermit(tasks);
 }
 
 let init = 0;
 let fPermits, fPermitsHistory, fSummaryByTrip, fSummaryByPermit;
 
-const outputPermit = function (output, tasks) {
+const outputPermit = function (tasks) {
   if (init == 0) {
       fPermits = fs.openSync('t_permits.csv', 'w');
       fPermitsHistory = fs.openSync('t_permits_history.csv','w');
@@ -394,8 +389,20 @@ const outputPermit = function (output, tasks) {
     trips: 0
   };
   let maxTrip = 0;
+  let trips = [];
   tasks.forEach( (row, index) => {
-    if (row.trip > maxTrip) maxTrip = row.trip;
+    if (row.trip > maxTrip) {
+      maxTrip = row.trip;
+      trips[row.trip] = {
+        start: row.start,
+        end: null,
+        due: row.due,
+        tasks: [row]
+      };
+    }
+    else if (row.trip > 0) {
+      trips[row.trip].tasks.push(row);
+    }
     let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},${row.trip},`;
     line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.type},${row.subtype},`;
     line += `${row.category},${row.appdate},${row.appstatus},${row.appstatusdate},${row.agencycode},`;
@@ -404,8 +411,35 @@ const outputPermit = function (output, tasks) {
     //console.log(line);
   });
   permit.trips = maxTrip;
-//  if (maxTrip == 0) console.log("PERMIT: " + JSON.stringify(tasks));
-if (maxTrip == 0) console.log(permit.permit_id + "  - Max trip: " + maxTrip + ", appdate " + permit.app_date);
+  let doit = false;
+  if (permit.permit_id == '16-10682') doit = true;
+  if (maxTrip == 0) {
+    console.log(permit.permit_id + "  - Max trip: " + maxTrip + ", appdate " + permit.app_date);
+  }
+  else {
+    trips.forEach( (trip, index) => {
+      const len = trip.tasks.length;
+      trip.end = trip.tasks[len-1].end;
+      const d1 = new Date(trip.start);
+      const d2 = new Date(trip.end);
+      const d3 = new Date(trip.due);
+      let days = Utilities.workingDaysBetweenDates(d1, d2);
+      let sla = Utilities.workingDaysBetweenDates(d1, d3);
+      let custDays = 0;
+      for (let i=0; i<len; ++i) {
+        let tsk = trip.tasks[i];
+        if (doit) {
+          console.log("* " + tsk.task + "." + tsk.status + ":  " + trip.tasks[i].start + "  -  " + trip.tasks[i].end);
+        }
+        if (trip.tasks[i].owner == 'CUST') {
+          custDays += Utilities.workingDaysBetweenDates(new Date(trip.tasks[i].start), new Date(trip.tasks[i].end));
+        }
+      }
+      if (doit) {
+        console.log(" " + permit.permit_id + "   trip " + index + ": " + days + " of " + sla + " - " + custDays + ", " + trip.start + " -- " + trip.end);
+      }
+    });
+  }
 }
 
 /*
@@ -424,17 +458,6 @@ else { // read a csv file
   let data = fs.readFileSync(input);
   let records = parse(data, {columns: true});
 
-  let output = process.stdout.fd;
-  if (process.argv.length > 2) {
-    const fname = (process.argv[2][0] == '/')?process.argv[2]:`./${process.argv[2]}`;
-    output = fs.openSync(fname, 'w');
-  }
-
-  // fs.write(output,
-  //   'B1_ALT_ID,Id,Process,Task,Status,Start,End,Due Date,Owner,Level,Type,SubType,' +
-  //   'Category,Application Date,Application Status,Application Status Date,Agency Code,' +
-  //   'Comment\n');
-  //
   // Now process permit by permit
   let done = false, cur = 0, id = null, count = 0;
   let elements = [];
@@ -446,22 +469,13 @@ else { // read a csv file
       let tasks = [];
       permitNum = elements[0].B1_ALT_ID;
       if (elements[0].Workflow == 'MASTER V4') {
-        tasks = wf_masterv4(elements, output);
+        tasks = wf_masterv4(elements);
       }
       else {
         console.log("Unknown workflow " + elements[0].Workflow);
       }
 
-      // tasks.forEach( (row, index) => {
-      //   let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},`;
-      //   line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.type},${row.subtype},`;
-      //   line += `${row.category},${row.appdate},${row.appstatus},${row.appstatusdate},${row.agencycode},`;
-      //   line += `${row.comment}\n`;
-      //   fs.writeSync(output, line);
-      //   //console.log(line);
-      // });
-
-      outputPermit(output, tasks);
+      outputPermit(tasks);
       elements = [];
       id = null;
     }
