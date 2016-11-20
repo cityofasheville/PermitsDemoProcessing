@@ -477,17 +477,33 @@ const getSLA = function (n) {
   return SLA_Values[index];
 }
 let init = 0;
-let fPermits, fPermitsHistory, fSummaryByTrip, fSummaryByPermit;
+let fPermits, fPermitsHistory, fTripsHistory;
 let violationCountByTrip = 0;
 let violationCountByPermit = 0;
+let permitViolations = [];
+let tripViolations = [];
+
+const createViolationsEntry = function (fld1, fld2, fld3 = null, fld4 = null) {
+  let r = {};
+  r[fld1] = {};
+  r[fld1][fld2]=null;
+  if (fld3) {
+    r[fld1][fld2]={};
+    r[fld1][fld2][fld3] = null;
+    if (fld4) {
+      r[fld1][fld2][fld3] = {};
+      r[fld1][fld2][fld3][fld4] = null;
+    }
+  }
+  return r;
+}
 
 const outputPermit = function (tasks) {
   let line;
   if (init == 0) {
       fPermits = fs.openSync('t_permits.csv', 'w');
       fPermitsHistory = fs.openSync('t_permits_history.csv','w');
-      fSummaryByTrip = fs.openSync('t_trip_violations.csv','w');
-      fSummaryByPermit = fs.openSync('t_permit_violations.csv','w');
+      fTrips = fs.openSync('t_trips.csv','w');
 
     fs.write(fPermits,
       'Permit ID,Type,SubType,Category,Application Date,Application Status,Application Status Date,' +
@@ -497,6 +513,11 @@ const outputPermit = function (tasks) {
       'Permit ID,Process,Task,Status,Trip,Start,End,Due Date,Owner,Level,Type,SubType,' +
       'Category,Application Date,Application Status,Application Status Date,Agency Code,' +
       'Comment\n');
+
+    fs.write(fTrips,
+      'Permit ID,Type,SubType,Category,Application Date,Application Status Date,' +
+      'Trip,Start,End,Due,Violation Days,Division\n');
+
     init = 1;
   }
 
@@ -576,12 +597,14 @@ const outputPermit = function (tasks) {
           permit.violationDays += trip.violationDays;
           permit.culprits[key] = true;
         }
+        // Output the trip
+        line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},`;
+        line += `${permit.app_status_date},${index},${trip.start},${trip.end},${trip.due},${trip.violationDays},${key}\n`;
+        if (!permit.app_date) throw line;
+        fs.writeSync(fTrips, line);
 
-        // It would be good to walk through and find the "blame" department.
         if (trip.violation) {
           ++violationCountByTrip;
-          console.log("VIOL  " + key + ": " + permit.permit_id + " Trip " + index + ": " + days + " of " + sla + ", " + trip.violationDays +
-            "  " + trip.end + " vs " + trip.due);
         }
         for (let i=0; i<len; ++i) {
           let tsk = trip.tasks[i];
@@ -590,7 +613,9 @@ const outputPermit = function (tasks) {
       }
     });
   }
-  if (permit.violation) ++violationCountByPermit;
+  if (permit.violation) {
+    ++violationCountByPermit;
+  }
   let culprits = [];
   for (let culpritTask in permit.culprits) {
     culprits.push(culpritTask);

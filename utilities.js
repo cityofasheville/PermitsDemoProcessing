@@ -9,6 +9,15 @@ Utilities.compareDates = function (d1, d2) {
   throw `compareDates called on null date: ${d1} vs ${d2}`;
 }
 
+Utilities.getDateAsNumber = function (d0) {
+  let d = new Date(d0);
+  let month = d.getMonth() + '';
+  let day = d.getDate() + '';
+  if (day.length == 1) day = '0'+day;
+  if (month.length == 1) month = '0'+month;
+  return parseInt(`${d.getFullYear()}${month}${day}`);
+}
+
 Utilities.workingDaysBetweenDates = function (startDate, endDate) {
   if (!startDate || !endDate) return 0;
     // Validate input
