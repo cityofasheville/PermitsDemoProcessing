@@ -4,6 +4,11 @@ const fs = require('fs');
 var parse = require('csv-parse/lib/sync');
 
 let permitNum = -1;
+let doit = false;
+
+const dlog = function (line) {
+  if (doit) console.log(line);
+}
 
 const createTask = function(process, task, status, start, end, due, owner, level, row, trip = 0) {
   if (!row) throw ("No row " + task);
@@ -166,20 +171,13 @@ let mycount = 0;
 const reviewProcess = function (tasks, process, row, currentProcessState) {
   const task = row.Task, status = row.Status;
   const statusDate = row['Status Date'], due = row['Due Date'];
-  let doit = false;
-
-  if (row.B1_ALT_ID == '16-06472') doit = true;
-  if (row.B1_ALT_ID == '16-06977') doit = true;
-  if (row.B1_ALT_ID == '16-07337') doit = true;
-  if (row.B1_ALT_ID == '16-07528') doit = true;
-  if (row.B1_ALT_ID == '16-08738') doit = true;
 
   if (!('processStartDate' in currentProcessState)) { // First time here
     currentTripNumber = 0;
     maxTripNumber = 0;
     startNewTrip = true;
     mycount = 0;
-    if (doit) console.log("---------------Starting permit " + row.B1_ALT_ID + ", set currentTripNumber = 0 -------");
+    dlog("---------------Starting permit " + row.B1_ALT_ID + ", set currentTripNumber = 0 -------");
     currentProcessState.processStartDate = statusDate; // This is the start of the whole process
     currentProcessState.processRoundStartDate = null; // this is the start of the current round (initial, second, etc. review)
     tasks.push(createTask(process, process, 'Start', statusDate, statusDate, null, '-', 0, row));
@@ -195,11 +193,11 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
       if (task == 'Routing') {
         resetAllTasks(currentProcessState, statusDate, false);
         startNewTrip = true;
-        if (doit) console.log("Set currentTripNumber to " + currentTripNumber + " in routing step - status = " + status);
+        dlog("Set currentTripNumber to " + currentTripNumber + " in routing step - status = " + status);
       }
       if (task == 'Review Process' && status == 'Complete') {
         startNewTrip = true;
-        if (doit) console.log("Set startNewTrip to true because review is complete");
+        dlog("Set startNewTrip to true because review is complete");
         currentProcessState.complete = true;
         startDate = currentProcessState.processStartDate;
         currentProcessState.processRoundStartDate = null;
@@ -209,12 +207,12 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
     return;
   }
   if (startNewTrip) {
-    if (doit) console.log("NEWTRIP start - " + currentTripNumber + " - " + maxTripNumber);
+    dlog("NEWTRIP start - " + currentTripNumber + " - " + maxTripNumber);
     currentTripNumber = Math.max(currentTripNumber, maxTripNumber);
     ++currentTripNumber;
     maxTripNumber = currentTripNumber;
     startNewTrip = false;
-    if (doit) console.log("NEWTRIP - now the currentTripNumber is " + currentTripNumber);
+    dlog("NEWTRIP - now the currentTripNumber is " + currentTripNumber);
   }
   /*
    * If we're here, we have a regular task.
@@ -236,7 +234,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
       previous: null,
       due: null
     };
-    if (doit) console.log("Initialized " + task + "." + status + " to trip " + currentTripNumber);
+    dlog("Initialized " + task + "." + status + " to trip " + currentTripNumber);
   }
   // Complete the previous step, if it exists.
   if (currentProcessState[task].previous) {
@@ -247,9 +245,9 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
   if (terminator && !(currentProcessState[task].reset)) {
       currentProcessState[task].start = statusDate;
       currentProcessState[task].start = currentProcessState.processRoundStartDate?currentProcessState.processRoundStartDate:statusDate;
-      if (doit) console.log(" Have a terminator - start is now " + currentProcessState[task].start);
+      dlog(" Have a terminator - start is now " + currentProcessState[task].start);
 
-      if (doit) console.log(task + ": Update task "+task+", status "+status + " -currentTripNumber now " + currentProcessState[task].trip);
+      dlog(task + ": Update task "+task+", status "+status + " -currentTripNumber now " + currentProcessState[task].trip);
   }
 
   let mode = currentProcessState[task].mode;
@@ -259,9 +257,8 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
       currentProcessState[task].start = statusDate;
     }
   }
-  if (doit) {
-    console.log("  " + process + "."+task+'.'+status + ": " + statusDate + ", trip " + currentProcessState[task].trip + ", mode " + mode);
-  }
+  dlog("  " + process + "."+task+'.'+status + ": " + statusDate + ", trip " + currentProcessState[task].trip + ", mode " + mode);
+
   switch (switchStatus) {
     case 'In Review':
       {
@@ -289,7 +286,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
          // Weird, but don't do anything
        }
        else if (mode == 'init' || mode == 'done') { // We skipped some steps!
-         if (doit) console.log("Hold in the air! Mode = " + mode);
+         dlog("Hold in the air! Mode = " + mode);
          if (mode == 'done') currentProcessState[task].trip += 1;
          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start, statusDate, due, owner, level,
             row, currentProcessState[task].trip));
@@ -327,7 +324,7 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
        if (mode != 'review') {
          if (mode == 'done' || mode == 'hold') {
            currentProcessState[task].trip += 1;
-           if (doit) console.log("Actually incrementing trip " + currentProcessState[task].trip);
+           dlog("Actually incrementing trip " + currentProcessState[task].trip);
            currentProcessState[task].start = currentProcessState.processRoundStartDate;
            if (!currentProcessState[task].start) {
              currentProcessState[task].start = statusDate;
@@ -335,9 +332,9 @@ const reviewProcess = function (tasks, process, row, currentProcessState) {
            else if (modeDate && Utilities.compareDates(modeDate, currentProcessState[task].start) > 0) {
              currentProcessState[task].start = statusDate;
            }
-           if (doit) console.log("Mode " + mode + ", set start to " + currentProcessState[task].start);
+           dlog("Mode " + mode + ", set start to " + currentProcessState[task].start);
          }
-         if (doit) console.log(" Unexpected terminator - doing pending and in review ")
+         dlog(" Unexpected terminator - doing pending and in review ")
          tasks.push(createTask(process, task, 'Pending Review', currentProcessState[task].start,
                     statusDate, due, owner, level, row,currentProcessState[task].trip));
          tasks.push(createTask(process, task, 'In Review', statusDate, statusDate, due, owner, level, row,currentProcessState[task].trip));
@@ -510,24 +507,19 @@ const outputPermit = function (tasks) {
     violationDays: 0,
     culprits:{}
   };
-  let doit = false;
-  if (r.B1_ALT_ID == '16-06472') doit = true;
-  if (r.B1_ALT_ID == '16-06977') doit = true;
-  if (r.B1_ALT_ID == '16-07337') doit = true;
-  if (r.B1_ALT_ID == '16-07528') doit = true;
-  if (r.B1_ALT_ID == '16-08738') doit = true;
+
   let maxTrip = 0;
   let trips = [];
   tasks.forEach( (row, index) => {
     if (row.trip > 0) {
       if (row.trip > maxTrip) {
-        if (doit) console.log("Create a new trip " + row.trip);
+        dlog("Create a new trip " + row.trip);
         maxTrip = row.trip;
         trips[row.trip] = {};
       }
       if (!(row.task in trips[row.trip])) {
         let lstart = (row.start)?row.start:row.appdate;
-        if (doit) console.log(" Set trip due date " + row.due + " for task " + row.task);
+        dlog(" Set trip due date " + row.due + " for task " + row.task);
         trips[row.trip][row.task] = {
           start: lstart,
           end: null,
@@ -541,7 +533,7 @@ const outputPermit = function (tasks) {
         trips[row.trip][row.task].tasks.push(row);
       }
     }
-    if (doit) console.log("Trip " + row.trip + ": start = " + row.start + ", end = " + row.end + ", due = " + row.due);
+    dlog("Trip " + row.trip + ": start = " + row.start + ", end = " + row.end + ", due = " + row.due);
     let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},${row.trip},`;
     line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.type},${row.subtype},`;
     line += `${row.category},${row.appdate},${row.appstatus},${row.appstatusdate},${row.agencycode},`;
@@ -553,7 +545,7 @@ const outputPermit = function (tasks) {
     trips.forEach( (tripSet, index) => {
       for (let key in tripSet) {
         let trip = tripSet[key];
-        if (doit) console.log ("Working trip " + index + " for task " + key + ", due = " + trip.due);
+        dlog ("Working trip " + index + " for task " + key + ", due = " + trip.due);
         const len = trip.tasks.length;
         trip.end = trip.tasks[len-1].end;
         if (!trip.end) {
@@ -578,14 +570,12 @@ const outputPermit = function (tasks) {
         // It would be good to walk through and find the "blame" department.
         if (trip.violation) {
           ++violationCountByTrip;
-          console.log("VIOL  " + key + ": " + permit.permit_id + " Trip " + index + ": " + days + " of " + sla + ", " + trip.violationDays +
-            "  " + trip.end + " vs " + trip.due);
+          // console.log("VIOL  " + key + ": " + permit.permit_id + " Trip " + index + ": " + days + " of " + sla + ", " + trip.violationDays +
+          //   "  " + trip.end + " vs " + trip.due);
         }
         for (let i=0; i<len; ++i) {
           let tsk = trip.tasks[i];
-          if (doit) {
-            console.log("* " + tsk.task + "." + tsk.status + ":  " + trip.tasks[i].start + "  -  " + trip.tasks[i].end);
-          }
+          dlog("* " + tsk.task + "." + tsk.status + ":  " + trip.tasks[i].start + "  -  " + trip.tasks[i].end);
         }
       }
     });
@@ -596,6 +586,12 @@ const outputPermit = function (tasks) {
 /*
  * MAIN PROGRAM
  */
+
+// if (row.B1_ALT_ID == '16-06472') doit = true;
+// if (row.B1_ALT_ID == '16-06977') doit = true;
+// if (row.B1_ALT_ID == '16-07337') doit = true;
+// if (row.B1_ALT_ID == '16-07528') doit = true;
+// if (row.B1_ALT_ID == '16-08738') doit = true;
 
 const processingMode = 'csv';
 if (processingMode == 'sheets') {
