@@ -482,12 +482,19 @@ let violationCountByTrip = 0;
 let violationCountByPermit = 0;
 
 const outputPermit = function (tasks) {
+  let line;
   if (init == 0) {
       fPermits = fs.openSync('t_permits.csv', 'w');
       fPermitsHistory = fs.openSync('t_permits_history.csv','w');
+      fSummaryByTrip = fs.openSync('t_trip_violations.csv','w');
+      fSummaryByPermit = fs.openSync('t_permit_violations.csv','w');
+
+    fs.write(fPermits,
+      'Permit ID,Type,SubType,Category,Application Date,Application Status,Application Status Date,' +
+      'Trips,Violation,Violation Count,Violation Days,Culprits\n');
 
     fs.write(fPermitsHistory,
-      'B1_ALT_ID,Id,Process,Task,Status,Trip,Start,End,Due Date,Owner,Level,Type,SubType,' +
+      'Permit ID,Process,Task,Status,Trip,Start,End,Due Date,Owner,Level,Type,SubType,' +
       'Category,Application Date,Application Status,Application Status Date,Agency Code,' +
       'Comment\n');
     init = 1;
@@ -504,6 +511,7 @@ const outputPermit = function (tasks) {
     app_status_date: r.appstatusdate,
     trips: 0,
     violation: false,
+    violationCount: 0,
     violationDays: 0,
     culprits:{}
   };
@@ -534,7 +542,7 @@ const outputPermit = function (tasks) {
       }
     }
     dlog("Trip " + row.trip + ": start = " + row.start + ", end = " + row.end + ", due = " + row.due);
-    let line = `${row.B1_ALT_ID},${index},${row.process},${row.task},${row.status},${row.trip},`;
+    line = `${row.B1_ALT_ID},${row.process},${row.task},${row.status},${row.trip},`;
     line += `${row.start},${row.end},${row.due},${row.owner},${row.level},${row.type},${row.subtype},`;
     line += `${row.category},${row.appdate},${row.appstatus},${row.appstatusdate},${row.agencycode},`;
     line += `${row.comment}\n`;
@@ -564,14 +572,16 @@ const outputPermit = function (tasks) {
           trip.violation = true;
           trip.violationDays = days - sla;
           permit.violation = true;
+          permit.violationCount += 1;
           permit.violationDays += trip.violationDays;
+          permit.culprits[key] = true;
         }
 
         // It would be good to walk through and find the "blame" department.
         if (trip.violation) {
           ++violationCountByTrip;
-          // console.log("VIOL  " + key + ": " + permit.permit_id + " Trip " + index + ": " + days + " of " + sla + ", " + trip.violationDays +
-          //   "  " + trip.end + " vs " + trip.due);
+          console.log("VIOL  " + key + ": " + permit.permit_id + " Trip " + index + ": " + days + " of " + sla + ", " + trip.violationDays +
+            "  " + trip.end + " vs " + trip.due);
         }
         for (let i=0; i<len; ++i) {
           let tsk = trip.tasks[i];
@@ -581,6 +591,15 @@ const outputPermit = function (tasks) {
     });
   }
   if (permit.violation) ++violationCountByPermit;
+  let culprits = [];
+  for (let culpritTask in permit.culprits) {
+    culprits.push(culpritTask);
+  }
+  line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},`;
+  line += `${permit.app_status},${permit.app_status_date},${permit.trips},`;
+  line += `${permit.violation},${permit.violationCount},${permit.violationDays},`;
+  line += `${culprits.join(';')}\n`;
+  fs.writeSync(fPermits, line);
 }
 
 /*
