@@ -1,6 +1,14 @@
 
 Utilities = {};
 
+Utilities.compareDates = function (d1, d2) {
+  if (d1 && d2) {
+    t1 = new Date(d1), t2 = new Date(d2);
+    return t1.getTime() - t2.getTime();
+  }
+  throw `compareDates called on null date: ${d1} vs ${d2}`;
+}
+
 Utilities.workingDaysBetweenDates = function (startDate, endDate) {
   if (!startDate || !endDate) return 0;
     // Validate input
@@ -12,7 +20,7 @@ Utilities.workingDaysBetweenDates = function (startDate, endDate) {
     startDate.setHours(0,0,0,1);  // Start just after midnight
     endDate.setHours(23,59,59,999);  // End just before midnight
     var diff = endDate - startDate;  // Milliseconds between datetime objects
-    var days = Math.ceil(diff / millisecondsPerDay);
+    var days = Math.floor(diff / millisecondsPerDay);
 
     // Subtract two weekend days for every week in between
     var weeks = Math.floor(days / 7);
