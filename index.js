@@ -498,16 +498,23 @@ const createViolationsEntry = function (fld1, fld2, fld3 = null, fld4 = null) {
   return r;
 }
 
+let DivisionIndex = {};
+
 const outputPermit = function (tasks) {
   let line;
   if (init == 0) {
-      fPermits = fs.openSync('t_permits.csv', 'w');
-      fPermitsHistory = fs.openSync('t_permits_history.csv','w');
-      fTrips = fs.openSync('t_trips.csv','w');
+    DivisionIndex['Building Review'] = 0;
+    DivisionIndex['Fire Review'] = 1;
+    DivisionIndex['Zoning'] = 2;
+    DivisionIndex['Addressing'] = 1;
+
+    fPermits = fs.openSync('t_permits.csv', 'w');
+    fPermitsHistory = fs.openSync('t_permits_history.csv','w');
+    fTrips = fs.openSync('t_trips.csv','w');
 
     fs.write(fPermits,
       'Permit ID,Type,SubType,Category,Application Date,Application Status,Application Status Date,' +
-      'Trips,Violation,Violation Count,Violation Days,Culprits\n');
+      'Trips,Violation,Violation Count,Violation Days,SLA,Building,Fire,Zoning,Addressing\n');
 
     fs.write(fPermitsHistory,
       'Permit ID,Process,Task,Status,Trip,Start,End,Due Date,Owner,Level,Type,SubType,' +
@@ -516,7 +523,7 @@ const outputPermit = function (tasks) {
 
     fs.write(fTrips,
       'Permit ID,Type,SubType,Category,Application Date,Application Status Date,' +
-      'Trip,Start,End,Due,Violation Days,Division\n');
+      'Trip,Start,End,Due,Violation Days,SLA, Division\n');
 
     init = 1;
   }
@@ -534,7 +541,7 @@ const outputPermit = function (tasks) {
     violation: false,
     violationCount: 0,
     violationDays: 0,
-    culprits:{}
+    culprits:[false, false, false, false]
   };
 
   let maxTrip = 0;
@@ -570,6 +577,8 @@ const outputPermit = function (tasks) {
     fs.writeSync(fPermitsHistory, line);
   });
   permit.trips = maxTrip;
+  let culpritDivisions = [false, false, false, false]; // Building,Fire,Zoning,Addressing
+  let sla = null;
   if (maxTrip > 0) {
     trips.forEach( (tripSet, index) => {
       for (let key in tripSet) {
@@ -586,7 +595,7 @@ const outputPermit = function (tasks) {
         const d2 = trip.end?new Date(trip.end):null;
         const d3 = trip.due?new Date(trip.due):null;
         let days = (d1&&d2)?Utilities.workingDaysBetweenDates(d1, d2):null;
-        let sla = (d1&&d3)?getSLA(Utilities.workingDaysBetweenDates(d1, d3)):null;
+        sla = (d1&&d3)?getSLA(Utilities.workingDaysBetweenDates(d1, d3)):null;
         trip.violation = false;
         trip.violationDays = 0;
         if ((days && sla) && days > sla) {
@@ -595,11 +604,11 @@ const outputPermit = function (tasks) {
           permit.violation = true;
           permit.violationCount += 1;
           permit.violationDays += trip.violationDays;
-          permit.culprits[key] = true;
+          permit.culprits[DivisionIndex[key]] = true;
         }
         // Output the trip
         line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},`;
-        line += `${permit.app_status_date},${index},${trip.start},${trip.end},${trip.due},${trip.violationDays},${key}\n`;
+        line += `${permit.app_status_date},${index},${trip.start},${trip.end},${trip.due},${trip.violationDays},${sla}, ${key}\n`;
         if (!permit.app_date) throw line;
         fs.writeSync(fTrips, line);
 
@@ -616,14 +625,11 @@ const outputPermit = function (tasks) {
   if (permit.violation) {
     ++violationCountByPermit;
   }
-  let culprits = [];
-  for (let culpritTask in permit.culprits) {
-    culprits.push(culpritTask);
-  }
+
   line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},`;
   line += `${permit.app_status},${permit.app_status_date},${permit.trips},`;
-  line += `${permit.violation},${permit.violationCount},${permit.violationDays},`;
-  line += `${culprits.join(';')}\n`;
+  line += `${permit.violation},${permit.violationCount},${permit.violationDays},${sla},`;
+  line += `${permit.culprits.join(',')}\n`;
   fs.writeSync(fPermits, line);
 }
 
