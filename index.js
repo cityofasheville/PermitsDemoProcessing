@@ -597,6 +597,7 @@ const outputPermit = function (tasks) {
           permit.violationDays += trip.violationDays;
           permit.culprits[key] = true;
         }
+
         // Output the trip
         line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},`;
         line += `${permit.app_status_date},${index},${trip.start},${trip.end},${trip.due},${trip.violationDays},${key}\n`;
