@@ -461,8 +461,24 @@ const processGoogleSpreadsheetData = function(data, tabletop) {
 
   outputPermit(tasks);
 }
-
-const SLA_Values = [1, 3, 10, 21, 30, 45, 90];
+ 
+const SLA_Values = [2, 3, 10, 21, 30, 45, 90];
+const SLA_Full_Names = [
+  'Quick Touch - 3 Days',
+  'Res. Waiver - 2 Days',
+  'Residential - 10 Days',
+  'Small Comm - 10 Days',
+  'Std Level I Comm  - 21 Days',
+  'Std Level II or III Comm - 45 Days',
+  'Large Comm - 90 Days'];
+const SLA_Short_Names = [
+  'Quick Touch',
+  'Res. Waiver',
+  'Residential',
+  'Small Comm',
+  'Level I Comm',
+  'Level II or III Comm',
+  'Large Comm'];
 
 const getSLA = function (n) {
   start = 999999;
@@ -474,7 +490,11 @@ const getSLA = function (n) {
       start = diff;
     }
   });
-  return SLA_Values[index];
+  return {
+    days: SLA_Values[index],
+    shortName: SLA_Short_Names[index],
+    fullName: SLA_Full_Names[index],
+  };
 }
 let init = 0;
 let fPermits, fPermitsHistory, fTripsHistory;
@@ -514,16 +534,16 @@ const outputPermit = function (tasks) {
 
     fs.write(fPermits,
       'permit_id,type,subtype,category,app_date,app_status,app_status_date,' +
-      'trips,violation,violation_count,violation_days,sla,building,fire,zoning,addressing\n');
+      'trips,violation,violation_count,violation_days,sla,sla_name,building,fire,zoning,addressing\n');
 
     fs.write(fPermitsHistory,
-      'permit_id,process,task,status,trip,start,end,due_date,owner,level,type,subtype,' +
+      'permit_id,process,task,status,trip,start_date,end_date,due_date,owner,level,type,subtype,' +
       'category,app_date,app_status,app_status_date,agency_code,' +
       'comment\n');
 
     fs.write(fTrips,
-      'permit_id,type,subtype,category,app_date,app_status_date,' +
-      'trip,start,end,due,violation_days,sla,division\n');
+      'permit_id,type,subtype,category,app_date,app_status,app_status_date,' +
+      'trip,start_date,end_date,due_date,violation_days,sla,sla_name,division\n');
 
     init = 1;
   }
@@ -578,6 +598,7 @@ const outputPermit = function (tasks) {
   });
   permit.trips = maxTrip;
   let culpritDivisions = [false, false, false, false]; // Building,Fire,Zoning,Addressing
+  let slaInfo = { days: -1, fullName: 'None', shortName: 'None' };
   let sla = -1;
   if (maxTrip > 0) {
     trips.forEach( (tripSet, index) => {
@@ -595,7 +616,8 @@ const outputPermit = function (tasks) {
         const d2 = trip.end?new Date(trip.end):null;
         const d3 = trip.due?new Date(trip.due):null;
         let days = (d1&&d2)?Utilities.workingDaysBetweenDates(d1, d2):null;
-        sla = (d1&&d3)?getSLA(Utilities.workingDaysBetweenDates(d1, d3)):null;
+        slaInfo = (d1&&d3)?getSLA(Utilities.workingDaysBetweenDates(d1, d3)):null;
+        sla = (slaInfo)?slaInfo.days:null;
         trip.violation = false;
         trip.violationDays = 0;
         // MAYBE COMPUTE TIME SPENT IN PENDING VS REVIEW
@@ -610,9 +632,14 @@ const outputPermit = function (tasks) {
           permit.culprits[DivisionIndex[key]] += 1;
         }
         // Output the trip
-        if (!sla) sla = -1;
-        line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},`;
-        line += `${permit.app_status_date},${index},${trip.start},${trip.end},${trip.due},${trip.violationDays},${sla}, ${key}\n`;
+        if (!sla) {
+          sla = -1;
+          slaInfo = { days: -1, fullName: 'None', shortName: 'None' };
+        }
+        line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},${permit.app_status},`;
+        line += `${permit.app_status_date},${index},${trip.start},${trip.end},`;
+        line += (trip.due)?`${trip.due},`:',';
+        line += `${trip.violationDays},${sla},${slaInfo.shortName},${key}\n`;
         if (!permit.app_date) throw line;
         fs.writeSync(fTrips, line);
 
@@ -632,7 +659,7 @@ const outputPermit = function (tasks) {
 
   line = `${permit.permit_id},${permit.type},${permit.subtype},${permit.category},${permit.app_date},`;
   line += `${permit.app_status},${permit.app_status_date},${permit.trips},`;
-  line += `${permit.violation},${permit.violationCount},${permit.violationDays},${sla},`;
+  line += `${permit.violation},${permit.violationCount},${permit.violationDays},${sla},${slaInfo.shortName},`;
   line += `${permit.culprits.join(',')}\n`;
   fs.writeSync(fPermits, line);
 }
