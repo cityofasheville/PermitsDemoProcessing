@@ -631,6 +631,7 @@ const outputPermit = function (tasks) {
           permit.violationDays += trip.violationDays;
           permit.culprits[DivisionIndex[key]] += 1;
         }
+
         // Output the trip
         if (!sla) {
           sla = -1;
