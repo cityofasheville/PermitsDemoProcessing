@@ -54,8 +54,38 @@ Utilities.workingDaysBetweenDates = function (startDate, endDate) {
     return days;
 }
 
-Utilities.doit = function () {
-  console.log("I am calling the doit function");
+const millisecondsPerDay = 60 * 60 * 24 * 1000;
+
+Utilities.workingDaysDifference = function (startDate0, endDate0, debug = false) {
+  
+  if (!startDate0 || !endDate0 || endDate0.getTime() < startDate0.getTime()) return 0;
+  let startDate = new Date(startDate0.getTime());
+  startDate.setHours(12, 0, 0, 0); // Noon on the start date
+  let endDate = new Date(endDate0.getTime());
+  endDate.setHours(13, 0, 0, 0); // 1pm on the end date
+
+  let startDay = startDate.getDay();
+  let endDay = endDate.getDay();
+  if (startDay == 0 || startDay == 6) {
+    console.log(`Start day on a weekend: ${startDate}`);
+    if (startDay == 0) startDate = new Date(startDate.getTime() - 2 * millisecondsPerDay);
+    if (startDay == 6) startDate = new Date(startDate.getTime() - millisecondsPerDay);
+  }
+  let businessDays = 0;
+  const diff = endDate.getTime() - startDate.getTime();
+  let weeks = Math.floor(diff / (7 * millisecondsPerDay)); // Whole weeks between the two days
+  let days = Math.floor(diff / millisecondsPerDay);
+
+  if (debug) console.log("Start = " + startDay + ", end = " + endDay);
+  if (startDay == endDay) {
+    businessDays = 5 * weeks;
+  } else if (startDay < endDay) {
+    businessDays = 5 * weeks + (endDay - startDay);
+  } else {
+    businessDays = 5 * weeks + 5 - (startDay - endDay);
+  }
+  if (debug) console.log(" Diff between " + startDate0 + " and " + endDate0 + " = " + businessDays);
+  return businessDays;
 }
 
 module.exports = Utilities;
