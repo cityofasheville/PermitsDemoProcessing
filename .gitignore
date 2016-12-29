@@ -2,3 +2,5 @@ node_modules
 *.csv
 fPermits*
 fSummary*
+.DS_Store
+
