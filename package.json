@@ -10,6 +10,6 @@
   "license": "ISC",
   "dependencies": {
     "csv": "^1.1.0",
-    "tabletop": "1.4.3"
+    "tabletop": "1.5.1"
   }
 }
