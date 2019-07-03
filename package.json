@@ -4,12 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
   },
   "author": "Eric Jackson <eric@deepweave.com> (http://deepweave.com/)",
   "license": "ISC",
   "dependencies": {
     "csv": "^1.1.0",
-    "tabletop": "1.4.3"
-  }
+    "tabletop": "1.4.3",
+    "snyk": "^1.189.0"
+  },
+  "snyk": true
 }
